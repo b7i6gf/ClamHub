@@ -1,6 +1,6 @@
 # ClamHub
 
-![ClamHub](docs/ClamHub.png)
+![ClamHub](Docs/ClamHub.png)
 
 A portable Windows frontend for ClamAV. Just drop the EXE next to the ClamAV binaries and go - no installation, no system changes, everything in one folder.
 
