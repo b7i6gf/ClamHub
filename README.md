@@ -100,6 +100,8 @@ You can also:
 2. Create a `ClamAV` subfolder and copy the portable ClamAV binaries into it
         ClamAV portable builds can be downloaded from [clamav.net](https://www.clamav.net/downloads).
         Download the newes clamav-x.x.x.win.x64.zip, extract the contents into the ClamAV subfolder
+<img width="145" height="60" alt="{73D03AF1-4EE5-4F03-A196-603963AA0ECF}" src="https://github.com/user-attachments/assets/e54a20aa-c1e8-47cd-bba0-506596ffb802" />
+
 3. Launch the EXE - configs and folders are created automatically on first run
 4. Wait for the automatic download of the virus database
 5. Have fun hunting for viruses :)
