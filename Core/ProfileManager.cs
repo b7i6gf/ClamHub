@@ -65,9 +65,21 @@ public static class ProfileManager
         return removed > 0;
     }
 
-    /// <summary>Writes the current list to profiles.json. Called from: AddOrUpdate, Delete.</summary>
+    /// <summary>
+    /// Writes the current list to profiles.json (atomic). Reports the reason on
+    /// failure instead of throwing. Called from: AddOrUpdate, Delete.
+    /// </summary>
     private static void Save()
-        => File.WriteAllText(AppPaths.ProfilesFile, JsonSerializer.Serialize(Profiles, JsonOptions));
+    {
+        try
+        {
+            AtomicFile.WriteAllText(AppPaths.ProfilesFile, JsonSerializer.Serialize(Profiles, JsonOptions));
+        }
+        catch (Exception ex)
+        {
+            AppNotifications.ReportError($"Could not save scan profiles: {ex.Message}");
+        }
+    }
 
     private static void SortByName()
         => Profiles.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));

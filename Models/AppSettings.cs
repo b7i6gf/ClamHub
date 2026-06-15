@@ -35,9 +35,6 @@ public class AppSettings
     /// <summary>Start clamd automatically when the GUI starts.</summary>
     public bool AutoStartDaemon { get; set; } = true;
 
-    /// <summary>Stop clamd automatically when the GUI exits.</summary>
-    public bool StopDaemonOnExit { get; set; } = true;
-
     /// <summary>Pass --multiscan to clamdscan so the daemon scans with multiple threads.</summary>
     public bool MultiScan { get; set; } = true;
 

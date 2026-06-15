@@ -61,7 +61,6 @@ public partial class MainWindow
         var s = SettingsManager.Current;
         SetUseDaemon.IsChecked = s.UseDaemon;
         SetAutoStart.IsChecked = s.AutoStartDaemon;
-        SetStopOnExit.IsChecked = s.StopDaemonOnExit;
         SetUpdateOnStart.IsChecked = s.UpdateOnStart;
         SetSound.IsChecked = s.SoundOnDetection;
         SetCountFiles.IsChecked = s.CountFilesOnDaemonScan;
@@ -77,7 +76,6 @@ public partial class MainWindow
         // on the programmatic IsChecked above, so no spurious dirty on load.
         SetUseDaemon.Click += (_, _) => MarkSettingsDirty();
         SetAutoStart.Click += (_, _) => MarkSettingsDirty();
-        SetStopOnExit.Click += (_, _) => MarkSettingsDirty();
         SetUpdateOnStart.Click += (_, _) => MarkSettingsDirty();
         SetSound.Click += (_, _) => MarkSettingsDirty();
         SetCountFiles.Click += (_, _) => MarkSettingsDirty();
@@ -318,7 +316,6 @@ public partial class MainWindow
             var s = SettingsManager.Current;
             s.UseDaemon = SetUseDaemon.IsChecked == true;
             s.AutoStartDaemon = SetAutoStart.IsChecked == true;
-            s.StopDaemonOnExit = SetStopOnExit.IsChecked == true;
             s.UpdateOnStart = SetUpdateOnStart.IsChecked == true;
             s.SoundOnDetection = SetSound.IsChecked == true;
             s.CountFilesOnDaemonScan = SetCountFiles.IsChecked == true;
@@ -330,7 +327,15 @@ public partial class MainWindow
             var typedKey = SetVtKey.Text.Trim();
             if (typedKey != VtKeyMask)
                 s.VirusTotalApiKey = typedKey;
-            SettingsManager.Save();
+            if (!SettingsManager.Save())
+            {
+                // The console is hidden on the Settings tab, so also use a dialog.
+                SetSettingsStatus("Settings could not be saved.", "DangerBrush");
+                MessageBox.Show(this,
+                    "The settings could not be saved. The location may be read-only or the disk full.",
+                    "Save failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
 
             // Re-mask without triggering a dirty mark.
             _settingsLoading = true;

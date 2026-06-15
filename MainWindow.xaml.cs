@@ -34,11 +34,23 @@ public partial class MainWindow : Window
     }
     private CancellationTokenSource? _scanCts;
 
+    /// <summary>Latest ClamAV/database version info, shown in the title and the About box.</summary>
+    private UpdateManager.VersionInfo? _versionInfo;
+
     public MainWindow()
     {
         InitializeComponent();
+        // Surface non fatal background errors (e.g. a failed save) in the console.
+        AppNotifications.ErrorOccurred += OnBackgroundError;
         Loaded += async (_, _) => await InitializeAsync();
     }
+
+    /// <summary>
+    /// Shows a reported background error in the output console (marshalled to the
+    /// UI thread). Called from: AppNotifications.ErrorOccurred.
+    /// </summary>
+    private void OnBackgroundError(string message)
+        => Dispatcher.Invoke(() => AppendLine(message));
 
     /// <summary>
     /// Startup sequence after the window is visible: show config check results,
@@ -65,10 +77,11 @@ public partial class MainWindow : Window
             Title = "ClamHub 1.0.0 (Administrator)";
         }
 
-        var version = await UpdateManager.GetVersionAsync();
-        VersionText.Text = version != null ? FormatVersion(version) : "ClamAV binaries not found";
+        var info = await UpdateManager.GetVersionInfoAsync();
+        _versionInfo = info;
+        VersionText.Text = info != null ? FormatVersionLine(info) : "ClamAV binaries not found";
 
-        if (version == null)
+        if (info == null)
         {
             AppendLine("ClamAV binaries are missing. Copy the portable ClamAV files into the ClamAV folder and restart.");
             await RefreshDaemonStatusAsync();
@@ -78,9 +91,9 @@ public partial class MainWindow : Window
         if (SettingsManager.Current.UpdateOnStart)
         {
             await RunGuarded(() => UpdateManager.RunUpdateAsync(AppendLine));
-            // Re-query after the update so the database version in the header is current.
-            var updated = await UpdateManager.GetVersionAsync();
-            if (updated != null) VersionText.Text = FormatVersion(updated);
+            // Re-query after the update so the database versions in the header are current.
+            var updated = await UpdateManager.GetVersionInfoAsync();
+            if (updated != null) { _versionInfo = updated; VersionText.Text = FormatVersionLine(updated); }
         }
 
         if (SettingsManager.Current.AutoStartDaemon && SettingsManager.Current.UseDaemon)
@@ -171,16 +184,18 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Reformats the clamscan --version string into a compact engine + database
-    /// line. clamscan reports "ClamAV &lt;ver&gt;/&lt;dbver&gt;/&lt;ctime date&gt;"; the date is
-    /// ClamAV's own ctime format and is kept verbatim. Called from: InitializeAsync, Update.
+    /// Builds the title bar line from the collected version info:
+    /// "ClamAV x.y.z      |      Database Versions: daily | main | bytecode -- date".
+    /// The date is ClamAV's own ctime format and is kept verbatim.
+    /// Called from: InitializeAsync and Update_Click.
     /// </summary>
-    private static string FormatVersion(string raw)
+    private static string FormatVersionLine(UpdateManager.VersionInfo v)
     {
-        var parts = raw.Split('/');
-        if (parts.Length >= 3)
-            return $"{parts[0].Trim()}      |      Database: Ver. {parts[1].Trim()} from {parts[2].Trim()}";
-        return raw.Trim();
+        string daily = v.Daily?.Version ?? "?";
+        string main = v.Main?.Version ?? "?";
+        string bytecode = v.Bytecode?.Version ?? "?";
+        var line = $"{v.Engine}      |      Database Versions: {daily} | {main} | {bytecode}";
+        return string.IsNullOrWhiteSpace(v.BuildTime) ? line : $"{line} -- {v.BuildTime}";
     }
 
     /// <summary>
@@ -220,8 +235,8 @@ public partial class MainWindow : Window
         {
             AppendSection("SIGNATURE UPDATE");
             await UpdateManager.RunUpdateAsync(AppendLine);
-            var version = await UpdateManager.GetVersionAsync();
-            if (version != null) VersionText.Text = FormatVersion(version);
+            var info = await UpdateManager.GetVersionInfoAsync();
+            if (info != null) { _versionInfo = info; VersionText.Text = FormatVersionLine(info); }
         });
 
     /// <summary>File picker for the scan target. Called from: XAML Click binding.</summary>
@@ -1134,7 +1149,7 @@ public partial class MainWindow : Window
 
     /// <summary>Opens the About dialog. Called from: title bar About button.</summary>
     private void About_Click(object sender, RoutedEventArgs e)
-        => new AboutWindow { Owner = this }.ShowDialog();
+        => new AboutWindow(_versionInfo) { Owner = this }.ShowDialog();
 
     /// <summary>
     /// Appends a line to the console box, thread safe for process output events.

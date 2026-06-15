@@ -64,6 +64,19 @@ public static class HistoryManager
         Save();
     }
 
+    /// <summary>
+    /// Writes the history to history.json (atomic). Reports the reason on
+    /// failure instead of throwing. Called from: Add, Delete, Clear.
+    /// </summary>
     private static void Save()
-        => File.WriteAllText(AppPaths.HistoryFile, JsonSerializer.Serialize(Entries, JsonOptions));
+    {
+        try
+        {
+            AtomicFile.WriteAllText(AppPaths.HistoryFile, JsonSerializer.Serialize(Entries, JsonOptions));
+        }
+        catch (Exception ex)
+        {
+            AppNotifications.ReportError($"Could not save scan history: {ex.Message}");
+        }
+    }
 }

@@ -138,7 +138,10 @@ public static class QuarantineManager
         }
     }
 
+    // Atomic write so the quarantine index cannot be truncated on a crash or a
+    // pulled USB stick. The action methods (Quarantine/Restore/Delete) wrap this
+    // in their own try/catch and report a failure to the user.
     private static void Save()
-        => File.WriteAllText(AppPaths.QuarantineIndexFile,
+        => AtomicFile.WriteAllText(AppPaths.QuarantineIndexFile,
             JsonSerializer.Serialize(Entries, JsonOptions));
 }

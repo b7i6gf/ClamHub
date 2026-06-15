@@ -672,7 +672,6 @@
                             <TextBlock Text="GUI  (settings.json)" FontWeight="SemiBold" Margin="0,0,0,8"/>
                             <CheckBox x:Name="SetUseDaemon" Content="Prefer daemon for scans" Margin="0,7"/>
                             <CheckBox x:Name="SetAutoStart" Content="Start daemon with the GUI" Margin="0,7"/>
-                            <CheckBox x:Name="SetStopOnExit" Content="Stop daemon on exit" Margin="0,7"/>
                             <CheckBox x:Name="SetUpdateOnStart" Content="Update signatures on startup" Margin="0,7"/>
                             <CheckBox x:Name="SetSound" Content="Sound on detection" Margin="0,7"/>
                             <CheckBox x:Name="SetCountFiles" Content="Count scanned files (daemon)"

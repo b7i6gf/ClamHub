@@ -50,12 +50,23 @@ public static class SettingsManager
     }
 
     /// <summary>
-    /// Persists the current settings to settings.json.
+    /// Persists the current settings to settings.json (atomic write). Returns
+    /// false and reports the reason when the write fails (e.g. read-only media),
+    /// instead of throwing, so a failed save never crashes the app.
     /// Called from: Load (first run) and the settings page when the user saves.
     /// </summary>
-    public static void Save()
+    public static bool Save()
     {
-        var json = JsonSerializer.Serialize(Current, JsonOptions);
-        File.WriteAllText(AppPaths.SettingsFile, json);
+        try
+        {
+            var json = JsonSerializer.Serialize(Current, JsonOptions);
+            AtomicFile.WriteAllText(AppPaths.SettingsFile, json);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            AppNotifications.ReportError($"Could not save settings: {ex.Message}");
+            return false;
+        }
     }
 }

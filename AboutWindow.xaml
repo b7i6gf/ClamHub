@@ -1,7 +1,7 @@
 <Window x:Class="ClamAVGui.AboutWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="About ClamHub" Height="240" Width="380"
+        Title="About ClamHub" Height="320" Width="440"
         WindowStartupLocation="CenterOwner" WindowStyle="None" ResizeMode="NoResize"
         Background="{StaticResource BgBrush}"
         MouseLeftButtonDown="Window_MouseLeftButtonDown">
@@ -16,8 +16,13 @@
             </Grid.RowDefinitions>
 
             <TextBlock Grid.Row="0" Text="ClamHub" FontSize="24" FontWeight="SemiBold"/>
-            <TextBlock Grid.Row="1" Text="Version 1.0.0" Margin="0,4,0,0"
-                       Foreground="{StaticResource MutedTextBrush}"/>
+            <StackPanel Grid.Row="1" Margin="0,6,0,0">
+                <TextBlock x:Name="HeaderVersionLine" Foreground="{StaticResource MutedTextBrush}"/>
+                <TextBlock x:Name="DbHeaderLine" Margin="0,10,0,3"
+                           Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"/>
+                <TextBlock x:Name="DbListLine" FontFamily="Consolas" FontSize="12"
+                           Foreground="{StaticResource MutedTextBrush}"/>
+            </StackPanel>
             <TextBlock Grid.Row="2" Margin="0,16,0,0" TextWrapping="Wrap"
                        Text="A portable, modern desktop frontend for ClamAV."/>
 

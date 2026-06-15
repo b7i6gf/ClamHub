@@ -95,7 +95,8 @@ public static class DaemonController
 
     /// <summary>
     /// Stops clamd gracefully via the SHUTDOWN command, kill as fallback.
-    /// Called from: MainWindow stop button and app exit (StopDaemonOnExit).
+    /// Called from: MainWindow stop button (manual stop). On app close the
+    /// stronger KillAllOwned is used instead.
     /// </summary>
     public static async Task StopAsync(Action<string>? onStatus = null)
     {
