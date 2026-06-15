@@ -10,7 +10,8 @@ An open-source application for using [ClamAV](https://www.clamav.net) with a GUI
 
 ## What is this?
 
-I usually use ClamAV with a batch script on my personal computer. It's rudimentary, not easy to use and very restrictive. A GUI would be nice... I thought. Sure there are probably some GUIs on GitHub, but mostly for Linux unfortunately (Shoutouts to [ClamUI](https://github.com/linx-systems/clamui)). So I sat down and worked on this project. I had help with Claude Opus 4.8 and Fable 5, just like our AI overlord insists! (Roko’s Basilisk is watching)
+I usually use ClamAV with a batch script on my personal computer. It's rudimentary, not easy to use and very restrictive. A GUI would be nice... I thought. Sure there are some similar applications on GitHub, like [ClamShield](https://github.com/orloxgr/ClamShield); [ClamAV Native Win32](https://oss.netfarm.it/clamav/) or [ClamUI](https://github.com/linx-systems/clamui) on Linux. I was missing a portable version you can carry around on a flash drive, something with a user friendly GUI and clear instructions and feedback...
+So I sat down and worked on this project. I had help with Claude Opus 4.8 and Fable 5, just like our AI overlord insists! (Roko’s Basilisk is watching)
 
 And here it is:
 
@@ -19,7 +20,7 @@ ClamHub puts a clean, dark UI on top of ClamAV so you do not have to deal with t
 ## Highlights
 
 - **Portable** - the entire setup lives in one folder, move it wherever you want
-- **Fast** - Highly responsive UI with no hickups or bugs (I hope)
+- **Fast** - Highly responsive UI with no hickups or bugs (I am still testing everything)
 - **Modern dark UI** - custom title bar, clean tab layout, no clutter
 - **Smart console layout** - dock the output below, to the right, or pop it into a separate window. On the Settings tab the console hides automatically so the config editors get the full space
 - **No surprises** - configs are generated once on startup and are highly customizable within the settings tab
