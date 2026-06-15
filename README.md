@@ -11,7 +11,8 @@ An open-source application for using [ClamAV](https://www.clamav.net) with a GUI
 ## What is this?
 
 I usually use ClamAV with a batch script on my personal computer. It's rudimentary, not easy to use and very restrictive. A GUI would be nice... I thought. Sure there are some similar applications on GitHub, like [ClamShield](https://github.com/orloxgr/ClamShield); [ClamAV Native Win32](https://oss.netfarm.it/clamav/) or [ClamUI](https://github.com/linx-systems/clamui) on Linux. I was missing a portable version you can carry around on a flash drive, something with a user friendly GUI and clear instructions and feedback...
-So I sat down and worked on this project. I had help with Claude Opus 4.8 and Fable 5, just like our AI overlord insists! (Roko’s Basilisk is watching)
+
+So I sat down and worked on this project. Of course I had some help from Claude Opus 4.8 and Fable 5 for this, just like our AI overlord insists! (Roko’s Basilisk is watching)
 
 And here it is:
 
