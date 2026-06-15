@@ -1,0 +1,55 @@
+<Window x:Class="ClamAVGui.ConsoleWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="ClamHub Output" Height="500" Width="640"
+        MinHeight="220" MinWidth="360"
+        WindowStartupLocation="Manual" WindowStyle="None" ResizeMode="CanResize"
+        Background="{StaticResource BgBrush}">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="6"
+                            CornerRadius="0" GlassFrameThickness="0"
+                            UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+
+    <Border BorderBrush="{StaticResource WindowBorderBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="36"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Title bar -->
+            <Grid Grid.Row="0" Background="{StaticResource TitleBarBrush}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="ClamHub Output" FontWeight="SemiBold"
+                           VerticalAlignment="Center" Margin="14,0,0,0"/>
+                <Button Grid.Column="1" Content="Open logs folder"
+                        Style="{StaticResource TitleBarTextButton}"
+                        Click="OpenLogs_Click"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
+                <Button Grid.Column="2" Content="Clear" Style="{StaticResource TitleBarTextButton}"
+                        Click="Clear_Click"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
+                <Button Grid.Column="3" Style="{StaticResource CloseCaptionButton}"
+                        Click="Close_Click" ToolTip="Close (returns output to the bottom)"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Path Data="M0,0 L10,10 M0,10 L10,0" Stroke="{StaticResource TextBrush}"
+                          StrokeThickness="1"/>
+                </Button>
+            </Grid>
+
+            <!-- Console output -->
+            <TextBox Grid.Row="1" x:Name="ConsoleBox" IsReadOnly="True"
+                     Background="#FF17181C" Foreground="#FFD6D6D6" BorderThickness="0"
+                     FontFamily="Consolas" FontSize="12" Padding="8"
+                     VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap"
+                     HorizontalScrollBarVisibility="Auto"/>
+        </Grid>
+    </Border>
+</Window>
