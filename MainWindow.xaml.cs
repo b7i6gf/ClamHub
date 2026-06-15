@@ -1178,19 +1178,16 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Window close hook: stops clamd when we started it and the setting is on.
+    /// Window close hook: cancels a running scan and force terminates clamd and
+    /// any other bundled ClamAV process, so nothing keeps running in the
+    /// background after the app is closed. Synchronous so it always completes
+    /// before the process exits (the previous async stop could be cut off).
     /// Called from: XAML Closing binding.
     /// </summary>
-    private async void Window_Closing(object? sender, CancelEventArgs e)
+    private void Window_Closing(object? sender, CancelEventArgs e)
     {
         _scanCts?.Cancel();
         CloseConsoleWindow();
-        if (SettingsManager.Current.StopDaemonOnExit && DaemonController.StartedByGui)
-        {
-            e.Cancel = true;
-            await DaemonController.StopAsync(AppendLine);
-            Closing -= Window_Closing;
-            Close();
-        }
+        DaemonController.KillAllOwned();
     }
 }

@@ -47,6 +47,19 @@ public partial class App : Application
     }
 
     /// <summary>
+    /// Shutdown hook. Ensures clamd and any other bundled ClamAV process is
+    /// terminated whenever the app exits, even through close paths that do not
+    /// go through the main window. Safe to run after the window already cleaned
+    /// up (it simply finds nothing left).
+    /// Called by: WPF runtime when the application shuts down.
+    /// </summary>
+    protected override void OnExit(ExitEventArgs e)
+    {
+        DaemonController.KillAllOwned();
+        base.OnExit(e);
+    }
+
+    /// <summary>
     /// Extracts the "--scan &lt;path&gt;" argument from the command line.
     /// Called from: OnStartup.
     /// </summary>

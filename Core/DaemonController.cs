@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Net.Sockets;
 using System.Text;
 
@@ -16,9 +17,6 @@ public static class DaemonController
 {
     /// <summary>Process handle when this GUI instance started clamd itself.</summary>
     private static Process? _ownedProcess;
-
-    /// <summary>True when this GUI started the daemon (used for StopDaemonOnExit).</summary>
-    public static bool StartedByGui => _ownedProcess is { HasExited: false };
 
     /// <summary>
     /// Checks whether clamd is responding. Sends "zPING\0" and expects "PONG".
@@ -129,5 +127,54 @@ public static class DaemonController
         }
         _ownedProcess = null;
         onStatus?.Invoke("clamd stopped.");
+    }
+
+    /// <summary>
+    /// Force terminates clamd and every other bundled ClamAV process that is
+    /// running from this app's ClamAV folder. Used on application close so no
+    /// daemon or scanner keeps running in the background, including leftovers
+    /// from an earlier session that this instance does not own. Synchronous and
+    /// safe to call more than once. Only processes whose executable lives under
+    /// our own ClamAV folder are touched, so a separate system wide ClamAV
+    /// installation is never affected.
+    /// Called from: MainWindow.Window_Closing and App.OnExit.
+    /// </summary>
+    public static void KillAllOwned()
+    {
+        // The instance we started ourselves (kill its whole tree first).
+        try
+        {
+            if (_ownedProcess is { HasExited: false })
+                _ownedProcess.Kill(entireProcessTree: true);
+        }
+        catch { /* already gone */ }
+        _ownedProcess = null;
+
+        // Any remaining bundled ClamAV processes. Match by our folder so an
+        // unrelated ClamAV install elsewhere on the system is left alone.
+        string clamDir;
+        try { clamDir = Path.GetFullPath(AppPaths.ClamAvDir).TrimEnd(Path.DirectorySeparatorChar)
+                        + Path.DirectorySeparatorChar; }
+        catch { return; }
+
+        foreach (var name in new[] { "clamd", "clamdscan", "clamscan", "freshclam" })
+        {
+            Process[] procs;
+            try { procs = Process.GetProcessesByName(name); }
+            catch { continue; }
+
+            foreach (var p in procs)
+            {
+                try
+                {
+                    var path = p.MainModule?.FileName;
+                    if (path != null &&
+                        path.StartsWith(clamDir, StringComparison.OrdinalIgnoreCase))
+                        p.Kill(entireProcessTree: true);
+                }
+                catch { /* access denied, different bitness, or already exited: skip */ }
+                finally { p.Dispose(); }
+            }
+        }
     }
 }
