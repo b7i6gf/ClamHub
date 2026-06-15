@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 
-namespace ClamAVGui.Core;
+namespace ClamHub.Core;
 
 /// <summary>
 /// Runs external ClamAV executables asynchronously and streams stdout/stderr

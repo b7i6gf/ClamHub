@@ -4,7 +4,7 @@ using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ClamAVGui.Core;
+namespace ClamHub.Core;
 
 /// <summary>
 /// Single-instance coordination. The first ClamHub process owns a named mutex

@@ -1,4 +1,4 @@
-namespace ClamAVGui.Models;
+namespace ClamHub.Models;
 
 /// <summary>
 /// One recorded scan, persisted in history.json by Core.HistoryManager and

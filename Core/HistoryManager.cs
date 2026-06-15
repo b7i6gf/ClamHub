@@ -1,8 +1,8 @@
 using System.IO;
 using System.Text.Json;
-using ClamAVGui.Models;
+using ClamHub.Models;
 
-namespace ClamAVGui.Core;
+namespace ClamHub.Core;
 
 /// <summary>
 /// Loads and saves the scan history (history.json next to the EXE), newest

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ClamHub</AssemblyName>
+    <RootNamespace>ClamHub</RootNamespace>
+    <Version>1.0.0</Version>
+    <!-- Embeds ClamHub.ico as the EXE icon (taskbar, Explorer, window). -->
+    <ApplicationIcon>ClamHub.ico</ApplicationIcon>
+    <!-- Publish flags (single file, self contained) are passed via publish.cmd
+         so that normal debug builds stay fast. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Ship the icon next to the EXE so the context menu entry can use it. -->
+    <None Include="ClamHub.ico" CopyToOutputDirectory="PreserveNewest"/>
+  </ItemGroup>
+
+</Project>

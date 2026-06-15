@@ -1,4 +1,4 @@
-namespace ClamAVGui.Core;
+namespace ClamHub.Core;
 
 /// <summary>
 /// Typed schema of clamd.conf and freshclam.conf parameters, audited against

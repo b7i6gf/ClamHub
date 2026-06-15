@@ -1,4 +1,4 @@
-namespace ClamAVGui.Core;
+namespace ClamHub.Core;
 
 /// <summary>
 /// App wide one way hook for non fatal background errors (for example a failed

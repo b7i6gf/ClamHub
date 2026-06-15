@@ -1,4 +1,4 @@
-namespace ClamAVGui.Models;
+namespace ClamHub.Models;
 
 /// <summary>
 /// Where the output console is shown: docked at the bottom (default), docked on

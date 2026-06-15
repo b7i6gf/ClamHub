@@ -1,7 +1,7 @@
 using System;
 using System.Windows;
 
-namespace ClamAVGui;
+namespace ClamHub;
 
 /// <summary>
 /// Separate output window used by the "Output in a separate window" view.

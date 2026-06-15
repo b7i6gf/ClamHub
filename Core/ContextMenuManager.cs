@@ -1,7 +1,7 @@
 using System.IO;
 using Microsoft.Win32;
 
-namespace ClamAVGui.Core;
+namespace ClamHub.Core;
 
 /// <summary>
 /// Registers and removes a "Scan with ClamHub" entry in the Windows context
@@ -17,9 +17,9 @@ public static class ContextMenuManager
     private const string MenuLabel = "Scan with ClamHub";
 
     // Shell verb keys for the three relevant classes.
-    private const string FileKey = @"Software\Classes\*\shell\ClamAVGuiScan";
-    private const string DirectoryKey = @"Software\Classes\Directory\shell\ClamAVGuiScan";
-    private const string DirectoryBgKey = @"Software\Classes\Directory\Background\shell\ClamAVGuiScan";
+    private const string FileKey = @"Software\Classes\*\shell\ClamHub";
+    private const string DirectoryKey = @"Software\Classes\Directory\shell\ClamHub";
+    private const string DirectoryBgKey = @"Software\Classes\Directory\Background\shell\ClamHub";
 
     /// <summary>
     /// Absolute path to the running EXE, used in the shell command.

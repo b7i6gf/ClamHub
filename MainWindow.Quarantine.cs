@@ -1,8 +1,8 @@
 using System.Windows;
-using ClamAVGui.Core;
-using ClamAVGui.Models;
+using ClamHub.Core;
+using ClamHub.Models;
 
-namespace ClamAVGui;
+namespace ClamHub;
 
 /// <summary>
 /// Quarantine tab logic: lists isolated files and restores or deletes them.

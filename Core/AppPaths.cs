@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace ClamAVGui.Core;
+namespace ClamHub.Core;
 
 /// <summary>
 /// Defines all paths of the portable folder layout relative to the EXE location.

@@ -1,11 +1,11 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Media;
-using ClamAVGui.Core;
-using ClamAVGui.Models;
+using ClamHub.Core;
+using ClamHub.Models;
 using Microsoft.Win32;
 
-namespace ClamAVGui;
+namespace ClamHub;
 
 /// <summary>
 /// Main window. Stage 3: scan panel (file/folder/drive, action selection,

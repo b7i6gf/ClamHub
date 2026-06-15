@@ -3,9 +3,9 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Navigation;
-using ClamAVGui.Core;
+using ClamHub.Core;
 
-namespace ClamAVGui;
+namespace ClamHub;
 
 /// <summary>
 /// Small modal About dialog. Shows the app version (read from the assembly),

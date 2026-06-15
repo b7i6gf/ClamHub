@@ -1,7 +1,7 @@
 using System.Windows;
-using ClamAVGui.Core;
+using ClamHub.Core;
 
-namespace ClamAVGui;
+namespace ClamHub;
 
 /// <summary>
 /// Application entry point. Runs the startup sequence before MainWindow opens:

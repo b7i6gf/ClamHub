@@ -1,9 +1,9 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ClamAVGui.Models;
+using ClamHub.Models;
 
-namespace ClamAVGui.Core;
+namespace ClamHub.Core;
 
 /// <summary>
 /// Loads and saves settings.json. Creates the file with defaults when missing,

@@ -1,9 +1,9 @@
 using System.Windows;
 using System.Windows.Controls;
-using ClamAVGui.Core;
-using ClamAVGui.Models;
+using ClamHub.Core;
+using ClamHub.Models;
 
-namespace ClamAVGui;
+namespace ClamHub;
 
 /// <summary>
 /// Settings tab logic: GUI options (settings.json) and the typed editors for

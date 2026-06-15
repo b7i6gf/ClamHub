@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text;
 
-namespace ClamAVGui.Core;
+namespace ClamHub.Core;
 
 /// <summary>
 /// Writes text files atomically: the content goes into a temporary file that is

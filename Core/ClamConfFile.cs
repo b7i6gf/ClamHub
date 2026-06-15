@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace ClamAVGui.Core;
+namespace ClamHub.Core;
 
 /// <summary>
 /// Minimal editor model for ClamAV conf files (freshclam.conf, clamd.conf).

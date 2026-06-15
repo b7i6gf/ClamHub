@@ -1,9 +1,9 @@
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
-using ClamAVGui.Models;
+using ClamHub.Models;
 
-namespace ClamAVGui.Core;
+namespace ClamHub.Core;
 
 /// <summary>
 /// Builds and runs ClamAV scans. Prefers clamdscan (daemon, parallel via

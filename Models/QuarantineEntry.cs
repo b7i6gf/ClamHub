@@ -1,4 +1,4 @@
-namespace ClamAVGui.Models;
+namespace ClamHub.Models;
 
 /// <summary>
 /// One quarantined file, tracked in quarantine.json so it can be restored to

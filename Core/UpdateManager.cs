@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text;
 
-namespace ClamAVGui.Core;
+namespace ClamHub.Core;
 
 /// <summary>
 /// Runs freshclam signature updates and queries the installed ClamAV version.

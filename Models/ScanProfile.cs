@@ -1,4 +1,4 @@
-namespace ClamAVGui.Models;
+namespace ClamHub.Models;
 
 /// <summary>
 /// A named, reusable scan configuration (e.g. "Quick Downloads check").

@@ -1,9 +1,9 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ClamAVGui.Models;
+using ClamHub.Models;
 
-namespace ClamAVGui.Core;
+namespace ClamHub.Core;
 
 /// <summary>
 /// Loads and saves scan profiles (profiles.json next to the EXE). Profile

@@ -1,9 +1,9 @@
 using System.Windows;
 using System.Windows.Controls;
-using ClamAVGui.Core;
-using ClamAVGui.Models;
+using ClamHub.Core;
+using ClamHub.Models;
 
-namespace ClamAVGui;
+namespace ClamHub;
 
 /// <summary>
 /// History tab logic: shows past scans in a table and the infected files of the

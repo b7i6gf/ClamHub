@@ -6,7 +6,7 @@ using System.Windows;
 using System.Windows.Input;
 using Microsoft.Win32;
 
-namespace ClamAVGui;
+namespace ClamHub;
 
 /// <summary>
 /// Generic editor for a list of directories and a list of file extensions.
