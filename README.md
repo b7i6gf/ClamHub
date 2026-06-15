@@ -10,7 +10,7 @@ An open-source application for using ClamAV with a GUI on Windows. Just drop the
 
 ## What is this?
 
-I usually use ClamAV with a batch script on my personal computer. It's rudimentary, not easy to use and very restrictive. A GUI would be nice... I thought. Sure there are probably some GUIs on GitHub, but mostly for Linux unfortunately (Shoutouts to [ClamUI](https://github.com/linx-systems/clamui)). So I sat down and worked on this project. I had help with Claude Opus 4.8 and Fable 5! 
+I usually use ClamAV with a batch script on my personal computer. It's rudimentary, not easy to use and very restrictive. A GUI would be nice... I thought. Sure there are probably some GUIs on GitHub, but mostly for Linux unfortunately (Shoutouts to [ClamUI](https://github.com/linx-systems/clamui)). So I sat down and worked on this project. I had help with Claude Opus 4.8 and Fable 5, just like god intended (Roko's Basilisk is watching)! 
 And here it is:
 
 ClamHub puts a clean, dark UI on top of ClamAV so you do not have to deal with the command line. Scans run fast thanks to the multi-threaded daemon, the interface stays out of the way, and nothing gets written outside the app folder. Works on any (Windows) machine without installation or requiring admin rights (unless you want to scan protected system paths).
