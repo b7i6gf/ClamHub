@@ -4,7 +4,7 @@
   <img src="Docs/ClamHub.png" alt="ClamHub" width="400"/>
 </p>
 
-An open-source application for using [ClamAV](https://www.clamav.net). with a GUI on Windows. Just drop the EXE next to your ClamAV folder and go - no installation, no system changes, everything in one place.
+An open-source application for using [ClamAV](https://www.clamav.net) with a GUI on Windows. Just drop the EXE next to your ClamAV folder and go - no installation, no system changes, everything in one place.
 
 ---
 
