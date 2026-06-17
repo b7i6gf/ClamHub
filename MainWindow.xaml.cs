@@ -42,7 +42,57 @@ public partial class MainWindow : Window
         InitializeComponent();
         // Surface non fatal background errors (e.g. a failed save) in the console.
         AppNotifications.ErrorOccurred += OnBackgroundError;
+        RestoreWindowSize();
         Loaded += async (_, _) => await InitializeAsync();
+    }
+
+    /// <summary>
+    /// Restores the window to the exact size and on-screen position it had when
+    /// last closed, so the user continues in the same state. If the saved position
+    /// is no longer visible (e.g. a monitor was disconnected) the window is opened
+    /// centered instead, and the size is capped to the whole desktop as a safety
+    /// net. Called from: the constructor.
+    /// </summary>
+    private void RestoreWindowSize()
+    {
+        var s = SettingsManager.Current;
+        bool haveSaved = s.WindowWidth >= MinWidth && s.WindowHeight >= MinHeight;
+
+        if (haveSaved)
+        {
+            // Keep the exact saved size; only guard against it being larger than
+            // every monitor combined (an impossible-to-show window).
+            Width = Math.Min(s.WindowWidth, SystemParameters.VirtualScreenWidth);
+            Height = Math.Min(s.WindowHeight, SystemParameters.VirtualScreenHeight);
+
+            if (IsOnScreen(s.WindowLeft, s.WindowTop, Width, Height))
+            {
+                WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
+                Left = s.WindowLeft;
+                Top = s.WindowTop;
+            }
+            // else: leave the XAML CenterScreen so it opens centered.
+        }
+
+        if (s.WindowMaximized)
+            WindowState = WindowState.Maximized;
+    }
+
+    /// <summary>
+    /// Returns true if at least a visible strip of the given window rectangle
+    /// falls on some monitor, so a position saved on a now-disconnected screen
+    /// does not place the window off-screen. Called from: RestoreWindowSize.
+    /// </summary>
+    private static bool IsOnScreen(double left, double top, double width, double height)
+    {
+        double vl = SystemParameters.VirtualScreenLeft;
+        double vt = SystemParameters.VirtualScreenTop;
+        double vr = vl + SystemParameters.VirtualScreenWidth;
+        double vb = vt + SystemParameters.VirtualScreenHeight;
+        const double strip = 80; // require at least this many px visible
+        bool xVisible = left + strip < vr && left + width - strip > vl;
+        bool yVisible = top + strip < vb && top + height - strip > vt;
+        return xVisible && yVisible;
     }
 
     /// <summary>
@@ -503,10 +553,9 @@ public partial class MainWindow : Window
 
         if (await DaemonController.IsRunningAsync(1000))
         {
-            var answer = MessageBox.Show(
-                "Default exclusions saved. The daemon must restart to apply them to daemon scans.\n\nRestart the daemon now?",
-                "Restart daemon", MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (answer == MessageBoxResult.Yes)
+            if (Confirm("Restart daemon",
+                    "Default exclusions saved. The daemon must restart to apply them to daemon scans.\n\nRestart the daemon now?",
+                    "Restart", "Not now"))
                 await RunGuarded(async () =>
                 {
                     await DaemonController.StopAsync(AppendLine);
@@ -825,6 +874,15 @@ public partial class MainWindow : Window
     // --- Output console placement (bottom / right / separate window) ---
 
     private ConsolePosition _consoleMode = ConsolePosition.Bottom;
+
+    /// <summary>
+    /// Fixed height (px) of the tab card (the main section) in the default
+    /// bottom-console view. The card stays this size while the output console
+    /// (a star row) absorbs any extra window height, so dragging the window
+    /// taller grows the console rather than the main section. Sized to fit the
+    /// scan controls including the progress indicator that appears mid-scan.
+    /// </summary>
+    private const double MainCardHeight = 270;
     private bool _onSettingsTab;
     private bool _onHistoryTab;
     private bool _consoleHiddenForTab;
@@ -919,63 +977,89 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Places the ConsoleBorder according to the current mode and tab. On the
-    /// Settings tab the console is always hidden so the tab area can expand. In
-    /// right mode the main column is frozen to its captured width so it never
-    /// stretches; the console column takes the remaining (added) space.
-    /// Called from: SetConsoleMode and Tabs_SelectionChanged.
+    /// Places the output console for the current mode and tab. The normal console
+    /// and the History output panel share the same docking (bottom or right) via
+    /// PositionDockedConsole, so both follow the view setting. On the Settings tab
+    /// the console is hidden; in Window mode the normal console moves to a separate
+    /// window, but the History panel does not use Window mode and falls back to a
+    /// bottom dock. Called from: SetConsoleMode and Tabs_SelectionChanged.
     /// </summary>
     private void ApplyConsoleLayout()
     {
-        // History tab: show its own output panel in the bottom row (a separate
-        // PanelBrush card, separated from the table card exactly like the main
-        // console), and keep the main console hidden.
-        HistoryConsoleBorder.Visibility = _onHistoryTab ? Visibility.Visible : Visibility.Collapsed;
-        if (_onHistoryTab)
+        bool history = _onHistoryTab;
+        HistoryConsoleBorder.Visibility = history ? Visibility.Visible : Visibility.Collapsed;
+
+        if (history)
         {
-            System.Windows.Controls.Grid.SetRowSpan(ConsoleBorder, 1);
+            // The History output follows the same docking as the normal console,
+            // except the separate-window mode is not used here: it falls back to a
+            // bottom dock. The normal console stays hidden on this tab.
             ConsoleBorder.Visibility = Visibility.Collapsed;
-            MainColumn.Width = new GridLength(1, GridUnitType.Star);
-            ConsoleColumn.Width = new GridLength(0);
-            ConsoleRow.Height = new GridLength(170);
+            System.Windows.Controls.Grid.SetRowSpan(ConsoleBorder, 1);
+            PositionDockedConsole(HistoryConsoleBorder,
+                _consoleMode == ConsolePosition.Right ? ConsolePosition.Right : ConsolePosition.Bottom);
             return;
         }
 
         bool showInMain = !_consoleHiddenForTab && _consoleMode != ConsolePosition.Window;
 
         if (showInMain && _consoleMode == ConsolePosition.Bottom)
-        {
-            System.Windows.Controls.Grid.SetRow(ConsoleBorder, 2);
-            System.Windows.Controls.Grid.SetRowSpan(ConsoleBorder, 1);
-            System.Windows.Controls.Grid.SetColumn(ConsoleBorder, 0);
-            System.Windows.Controls.Grid.SetColumnSpan(ConsoleBorder, 2);
-            ConsoleBorder.Margin = new Thickness(0, 16, 0, 0);
-            ConsoleBorder.Visibility = Visibility.Visible;
-            ConsoleRow.Height = new GridLength(1, GridUnitType.Star);
-            MainColumn.Width = new GridLength(1, GridUnitType.Star);
-            ConsoleColumn.Width = new GridLength(0);
-        }
+            PositionDockedConsole(ConsoleBorder, ConsolePosition.Bottom);
         else if (showInMain && _consoleMode == ConsolePosition.Right)
-        {
-            System.Windows.Controls.Grid.SetRow(ConsoleBorder, 0);
-            System.Windows.Controls.Grid.SetRowSpan(ConsoleBorder, 3);
-            System.Windows.Controls.Grid.SetColumn(ConsoleBorder, 1);
-            System.Windows.Controls.Grid.SetColumnSpan(ConsoleBorder, 1);
-            ConsoleBorder.Margin = new Thickness(16, 0, 0, 0);
-            ConsoleBorder.Visibility = Visibility.Visible;
-            ConsoleRow.Height = new GridLength(0);
-            // Freeze main to its captured width; console flexes to fill the rest.
-            MainColumn.Width = new GridLength(_mainColWidth);
-            ConsoleColumn.Width = new GridLength(1, GridUnitType.Star);
-        }
+            PositionDockedConsole(ConsoleBorder, ConsolePosition.Right);
         else
         {
             // Window mode or Settings tab: no console in the main grid.
             System.Windows.Controls.Grid.SetRowSpan(ConsoleBorder, 1);
+            MainRow.Height = new GridLength(1, GridUnitType.Star);
+            TabCardRow.Height = new GridLength(1, GridUnitType.Star);
             MainColumn.Width = new GridLength(1, GridUnitType.Star);
             ConsoleBorder.Visibility = Visibility.Collapsed;
             ConsoleRow.Height = new GridLength(0);
             ConsoleColumn.Width = new GridLength(0);
+        }
+    }
+
+    /// <summary>
+    /// Docks the given console border at the bottom (main card fixed height,
+    /// console row grows with the window) or on the right (main column frozen to
+    /// its captured width, console column grows). Shared by the normal output
+    /// console and the History output panel so both honor the same view setting.
+    /// Called from: ApplyConsoleLayout.
+    /// </summary>
+    private void PositionDockedConsole(System.Windows.Controls.Border border, ConsolePosition mode)
+    {
+        if (mode == ConsolePosition.Bottom)
+        {
+            System.Windows.Controls.Grid.SetRow(border, 2);
+            System.Windows.Controls.Grid.SetRowSpan(border, 1);
+            System.Windows.Controls.Grid.SetColumn(border, 0);
+            System.Windows.Controls.Grid.SetColumnSpan(border, 2);
+            border.Margin = new Thickness(0, 16, 0, 0);
+            border.Visibility = Visibility.Visible;
+            // Main section keeps a fixed height; the console (star row) takes all
+            // the extra height so dragging the window taller grows the console.
+            MainRow.Height = GridLength.Auto;
+            TabCardRow.Height = new GridLength(MainCardHeight);
+            ConsoleRow.Height = new GridLength(1, GridUnitType.Star);
+            MainColumn.Width = new GridLength(1, GridUnitType.Star);
+            ConsoleColumn.Width = new GridLength(0);
+        }
+        else // Right
+        {
+            System.Windows.Controls.Grid.SetRow(border, 0);
+            System.Windows.Controls.Grid.SetRowSpan(border, 3);
+            System.Windows.Controls.Grid.SetColumn(border, 1);
+            System.Windows.Controls.Grid.SetColumnSpan(border, 1);
+            border.Margin = new Thickness(16, 0, 0, 0);
+            border.Visibility = Visibility.Visible;
+            // Main fills vertically; width is frozen so the console (star column)
+            // absorbs extra width when the window is widened.
+            MainRow.Height = new GridLength(1, GridUnitType.Star);
+            TabCardRow.Height = new GridLength(1, GridUnitType.Star);
+            ConsoleRow.Height = new GridLength(0);
+            MainColumn.Width = new GridLength(_mainColWidth);
+            ConsoleColumn.Width = new GridLength(1, GridUnitType.Star);
         }
     }
 
@@ -1149,7 +1233,29 @@ public partial class MainWindow : Window
 
     /// <summary>Opens the About dialog. Called from: title bar About button.</summary>
     private void About_Click(object sender, RoutedEventArgs e)
-        => new AboutWindow(_versionInfo) { Owner = this }.ShowDialog();
+    {
+        var dialog = new AboutWindow(_versionInfo) { Owner = this };
+        // Run the update after the dialog closes so its output shows in the console.
+        if (dialog.ShowDialog() == true && dialog.UpdateRequested)
+            Update_Click(this, new RoutedEventArgs());
+    }
+
+    /// <summary>
+    /// Shows a custom modal confirm dialog (dark, About-box style) and returns
+    /// true when the confirm button is chosen. Replaces the Windows MessageBox.
+    /// Called from: delete/restore/restart confirmations across the tabs.
+    /// </summary>
+    private bool Confirm(string title, string message, string confirmLabel, string cancelLabel)
+        => new MessageDialog(title, message, confirmLabel, cancelLabel) { Owner = this }
+            .ShowDialog() == true;
+
+    /// <summary>
+    /// Shows a custom modal info dialog (dark, About-box style) with a single OK
+    /// button. Replaces the Windows MessageBox. Called from: the settings
+    /// save-failure path.
+    /// </summary>
+    private void Inform(string title, string message)
+        => new MessageDialog(title, message, "OK", null) { Owner = this }.ShowDialog();
 
     /// <summary>
     /// Appends a line to the console box, thread safe for process output events.
@@ -1203,6 +1309,40 @@ public partial class MainWindow : Window
     {
         _scanCts?.Cancel();
         CloseConsoleWindow();
+        SaveWindowSize();
         DaemonController.KillAllOwned();
+    }
+
+    /// <summary>
+    /// Saves the current window size and position so it can be restored next
+    /// launch. Uses the normal (non maximized) restore bounds and the tracked
+    /// normal width so the window does not grow or drift each session. Called
+    /// from: Window_Closing.
+    /// </summary>
+    private void SaveWindowSize()
+    {
+        var s = SettingsManager.Current;
+        s.WindowMaximized = WindowState == WindowState.Maximized;
+
+        if (WindowState == WindowState.Maximized)
+        {
+            // RestoreBounds is the size/position the window had before maximizing.
+            s.WindowWidth = RestoreBounds.Width;
+            s.WindowHeight = RestoreBounds.Height;
+            s.WindowLeft = RestoreBounds.Left;
+            s.WindowTop = RestoreBounds.Top;
+        }
+        else
+        {
+            // In right-dock mode the window is widened by RightDockExtra; store the
+            // tracked normal width instead so it restores at the right size.
+            s.WindowWidth = _consoleMode == ConsolePosition.Right && _normalWidth > 0
+                ? _normalWidth : Width;
+            s.WindowHeight = Height;
+            s.WindowLeft = Left;
+            s.WindowTop = Top;
+        }
+
+        SettingsManager.Save();
     }
 }

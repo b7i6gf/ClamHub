@@ -47,6 +47,21 @@ public class AppSettings
     /// <summary>Default action for infected files.</summary>
     public InfectedFileAction DefaultAction { get; set; } = InfectedFileAction.ReportOnly;
 
+    /// <summary>Last window width in pixels (0 = use the default start size). Restored on launch.</summary>
+    public double WindowWidth { get; set; }
+
+    /// <summary>Last window height in pixels (0 = use the default start size). Restored on launch.</summary>
+    public double WindowHeight { get; set; }
+
+    /// <summary>Last window left position (screen px). Restored only when still on a visible monitor.</summary>
+    public double WindowLeft { get; set; }
+
+    /// <summary>Last window top position (screen px). Restored only when still on a visible monitor.</summary>
+    public double WindowTop { get; set; }
+
+    /// <summary>Whether the window was maximized when last closed.</summary>
+    public bool WindowMaximized { get; set; }
+
     /// <summary>Where the output console is docked. Set via the title bar view buttons.</summary>
     public ConsolePosition ConsolePosition { get; set; } = ConsolePosition.Bottom;
 

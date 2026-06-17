@@ -213,7 +213,8 @@ public partial class MainWindow
                 var btn = new Button
                 {
                     Content = "Manage list...",
-                    Height = 24,
+                    Height = 28,
+                    Padding = new Thickness(12, 0, 12, 0),
                     ToolTip = param.Hint
                 };
                 btn.Click += (_, _) => OpenExclusionsFromSettings();
@@ -331,9 +332,8 @@ public partial class MainWindow
             {
                 // The console is hidden on the Settings tab, so also use a dialog.
                 SetSettingsStatus("Settings could not be saved.", "DangerBrush");
-                MessageBox.Show(this,
-                    "The settings could not be saved. The location may be read-only or the disk full.",
-                    "Save failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                Inform("Save failed",
+                    "The settings could not be saved. The location may be read-only or the disk full.");
                 return;
             }
 
@@ -430,5 +430,75 @@ public partial class MainWindow
         {
             AppendLine($"Could not open {path}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Rebuilds the clamd.conf or freshclam.conf chosen via the button Tag, after
+    /// asking whether to keep the current settings. The database and log paths are
+    /// always reset to the correct folders. Called from: XAML Click binding of the
+    /// per-file "Rebuild config" buttons.
+    /// </summary>
+    private void RebuildConfig_Click(object sender, RoutedEventArgs e)
+    {
+        var target = (sender as FrameworkElement)?.Tag as string == "freshclam"
+            ? ConfigManager.ConfigTarget.FreshClam
+            : ConfigManager.ConfigTarget.Clamd;
+        string name = target == ConfigManager.ConfigTarget.FreshClam ? "freshclam.conf" : "clamd.conf";
+
+        if (!AskRebuild(name, out bool transfer)) return;
+
+        try
+        {
+            ConfigManager.RebuildConfig(target, transfer);
+        }
+        catch (Exception ex)
+        {
+            SetSettingsStatus($"Could not rebuild {name}: {ex.Message}", "DangerBrush");
+            return;
+        }
+
+        LoadConfEditors();
+        AppendSection("REBUILD CONFIG");
+        AppendLine($"{name} rebuilt ({(transfer ? "settings kept" : "defaults")}). Restart the daemon to apply.");
+        SetSettingsStatus($"{name} rebuilt. Restart the daemon to apply.", "OkBrush");
+    }
+
+    /// <summary>
+    /// Rebuilds both config files at once with the same transfer choice.
+    /// Called from: XAML Click binding of the "Rebuild all configs" button.
+    /// </summary>
+    private void RebuildAllConfigs_Click(object sender, RoutedEventArgs e)
+    {
+        if (!AskRebuild("clamd.conf and freshclam.conf", out bool transfer)) return;
+
+        try
+        {
+            ConfigManager.RebuildAllConfigs(transfer);
+        }
+        catch (Exception ex)
+        {
+            SetSettingsStatus($"Could not rebuild configs: {ex.Message}", "DangerBrush");
+            return;
+        }
+
+        LoadConfEditors();
+        AppendSection("REBUILD CONFIG");
+        AppendLine($"clamd.conf and freshclam.conf rebuilt ({(transfer ? "settings kept" : "defaults")}). Restart the daemon to apply.");
+        SetSettingsStatus("Configs rebuilt. Restart the daemon to apply.", "OkBrush");
+    }
+
+    /// <summary>
+    /// Asks (via the custom RebuildConfigDialog) whether to rebuild and whether
+    /// to keep the current values. Returns false when cancelled; otherwise sets
+    /// transfer (true = keep settings, false = first-run defaults). Called from:
+    /// the rebuild handlers.
+    /// </summary>
+    private bool AskRebuild(string what, out bool transfer)
+    {
+        transfer = false;
+        var dialog = new RebuildConfigDialog(what) { Owner = this };
+        if (dialog.ShowDialog() != true) return false;
+        transfer = dialog.Choice == RebuildConfigDialog.RebuildChoice.KeepSettings;
+        return true;
     }
 }

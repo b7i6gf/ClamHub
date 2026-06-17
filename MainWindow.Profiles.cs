@@ -103,9 +103,8 @@ public partial class MainWindow
             return;
         }
 
-        var answer = MessageBox.Show($"Delete profile \"{name}\"?",
-            "Delete profile", MessageBoxButton.YesNo, MessageBoxImage.Question);
-        if (answer != MessageBoxResult.Yes) return;
+        if (!Confirm("Delete profile", $"Delete profile \"{name}\"?", "Delete", "Cancel"))
+            return;
 
         ProfileManager.Delete(name);
         RefreshProfileCombo(null);

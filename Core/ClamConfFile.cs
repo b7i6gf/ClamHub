@@ -81,6 +81,18 @@ public class ClamConfFile
     public void Save() => File.WriteAllLines(Path, _lines);
 
     /// <summary>
+    /// Returns every "Key Value" pair in file order (comments and blank lines
+    /// skipped), so a rebuild can carry the user's settings into a fresh file.
+    /// Called from: ConfigManager.RebuildConfig.
+    /// </summary>
+    public IEnumerable<(string Key, string Value)> AllValues()
+    {
+        foreach (var line in _lines)
+            if (TryParse(line, out var k, out var v))
+                yield return (k, v);
+    }
+
+    /// <summary>
     /// Parses one line into key and unquoted value. Returns false for blank
     /// lines and comments. Called from: GetValue, SetValue, Remove.
     /// </summary>

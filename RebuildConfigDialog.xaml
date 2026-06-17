@@ -1,0 +1,34 @@
+<Window x:Class="ClamHub.RebuildConfigDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Rebuild config" Height="250" Width="470"
+        WindowStartupLocation="CenterOwner" WindowStyle="None" ResizeMode="NoResize"
+        Background="{StaticResource BgBrush}"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown">
+    <Border BorderBrush="{StaticResource WindowBorderBrush}" BorderThickness="1">
+        <Grid Margin="24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Text="Rebuild configuration"
+                       FontSize="22" FontWeight="SemiBold"/>
+            <TextBlock Grid.Row="1" x:Name="MessageText" Margin="0,12,0,0"
+                       TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}"/>
+
+            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right"
+                        VerticalAlignment="Bottom">
+                <Button Content="Keep settings" Width="120" Height="30" Margin="0,0,8,0"
+                        Click="Keep_Click"
+                        ToolTip="Carry over your current values; only the database and log paths are reset"/>
+                <Button Content="Reset to defaults" Width="130" Height="30" Margin="0,0,8,0"
+                        Click="Defaults_Click"
+                        ToolTip="Discard customizations and write first-run defaults"/>
+                <Button Content="Cancel" Width="80" Height="30" Click="Cancel_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

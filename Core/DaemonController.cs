@@ -78,6 +78,8 @@ public static class DaemonController
             if (_ownedProcess.HasExited)
             {
                 onStatus?.Invoke($"clamd exited early (code {_ownedProcess.ExitCode}). Check Logs\\clamd.log.");
+                onStatus?.Invoke("Hint: this often means clamd.conf points at the wrong database or log folder " +
+                                 "(e.g. after moving the app). Try Settings > Rebuild config.");
                 _ownedProcess = null;
                 return false;
             }
@@ -90,6 +92,8 @@ public static class DaemonController
         }
 
         onStatus?.Invoke("Timeout: clamd did not become ready. Check Logs\\clamd.log.");
+        onStatus?.Invoke("Hint: if the database or log folder in clamd.conf is wrong (e.g. after moving " +
+                         "the app), use Settings > Rebuild config.");
         return false;
     }
 

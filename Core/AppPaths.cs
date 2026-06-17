@@ -9,7 +9,7 @@ namespace ClamHub.Core;
 /// </summary>
 public static class AppPaths
 {
-    /// <summary>Folder that contains ClamAV-GUI.exe. Everything is relative to this.</summary>
+    /// <summary>Folder that contains ClamHub.exe. Everything is relative to this.</summary>
     public static string BaseDir { get; } = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
 
     /// <summary>Folder with the portable ClamAV binaries (clamd.exe, clamscan.exe, ...).</summary>

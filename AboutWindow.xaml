@@ -26,17 +26,36 @@
             <TextBlock Grid.Row="2" Margin="0,16,0,0" TextWrapping="Wrap"
                        Text="A portable, modern desktop frontend for ClamAV."/>
 
-            <TextBlock Grid.Row="4" VerticalAlignment="Bottom">
-                <Hyperlink NavigateUri="https://github.com/b7i6gf/ClamHub"
-                           RequestNavigate="Hyperlink_RequestNavigate"
-                           Foreground="{StaticResource AccentBrush}">
-                    GitHub Repository
-                </Hyperlink>
-            </TextBlock>
+            <Grid Grid.Row="4" VerticalAlignment="Bottom">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
 
-            <Button Grid.Row="4" Content="Close" Width="80" Height="30"
-                    HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                    Click="Close_Click"/>
+                <StackPanel Grid.Column="0" VerticalAlignment="Bottom">
+                    <TextBlock>
+                        <Hyperlink NavigateUri="https://github.com/b7i6gf/ClamHub"
+                                   RequestNavigate="Hyperlink_RequestNavigate"
+                                   Foreground="{StaticResource AccentBrush}">
+                            GitHub Repository
+                        </Hyperlink>
+                    </TextBlock>
+                    <TextBlock Margin="0,4,0,0">
+                        <Hyperlink NavigateUri="https://www.clamav.net/"
+                                   RequestNavigate="Hyperlink_RequestNavigate"
+                                   Foreground="{StaticResource AccentBrush}">
+                            ClamAV Website
+                        </Hyperlink>
+                    </TextBlock>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
+                    <Button Content="Update signatures" Width="130" Height="30" Margin="0,0,8,0"
+                            Click="UpdateSignatures_Click"
+                            ToolTip="Run freshclam to update the signature databases"/>
+                    <Button Content="Close" Width="80" Height="30" Click="Close_Click"/>
+                </StackPanel>
+            </Grid>
         </Grid>
     </Border>
 </Window>

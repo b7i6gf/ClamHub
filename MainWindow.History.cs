@@ -171,9 +171,8 @@ public partial class MainWindow
     /// <summary>Clears the history after confirmation. Called from: XAML Click binding.</summary>
     private void ClearHistory_Click(object sender, RoutedEventArgs e)
     {
-        var answer = MessageBox.Show("Delete the entire scan history?",
-            "Clear history", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        if (answer != MessageBoxResult.Yes) return;
+        if (!Confirm("Clear history", "Delete the entire scan history?", "Delete", "Cancel"))
+            return;
 
         HistoryManager.Clear();
         BindHistory();

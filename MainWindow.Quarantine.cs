@@ -79,21 +79,20 @@ public partial class MainWindow
             return;
         }
 
-        var warn = MessageBox.Show(
-            $"Restore \"{entry.OriginalName}\" to:\n{entry.OriginalPath}\n\n" +
-            "This file was flagged as infected. Restore anyway?",
-            "Restore from quarantine", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        if (warn != MessageBoxResult.Yes) return;
+        if (!Confirm("Restore from quarantine",
+                $"Restore \"{entry.OriginalName}\" to:\n{entry.OriginalPath}\n\n" +
+                "This file was flagged as infected. Restore anyway?",
+                "Restore", "Cancel"))
+            return;
 
         if (!QuarantineManager.Restore(entry, overwrite: false, out var error))
         {
             // Offer overwrite when the only problem is an existing target file.
             if (error != null && error.Contains("already exists"))
             {
-                var ow = MessageBox.Show(
-                    "A file already exists at the original location. Overwrite it?",
-                    "Overwrite", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-                if (ow != MessageBoxResult.Yes)
+                if (!Confirm("Overwrite",
+                        "A file already exists at the original location. Overwrite it?",
+                        "Overwrite", "Cancel"))
                     return;
 
                 if (QuarantineManager.Restore(entry, overwrite: true, out var overwriteError))
@@ -127,10 +126,10 @@ public partial class MainWindow
             return;
         }
 
-        var answer = MessageBox.Show(
-            $"Permanently delete \"{entry.OriginalName}\"?\nThis cannot be undone.",
-            "Delete from quarantine", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        if (answer != MessageBoxResult.Yes) return;
+        if (!Confirm("Delete from quarantine",
+                $"Permanently delete \"{entry.OriginalName}\"?\nThis cannot be undone.",
+                "Delete", "Cancel"))
+            return;
 
         if (QuarantineManager.Delete(entry, out var error))
         {

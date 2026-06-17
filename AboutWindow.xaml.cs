@@ -75,10 +75,26 @@ public partial class AboutWindow : Window
         e.Handled = true;
     }
 
+    /// <summary>
+    /// Set to true when the user clicks "Update signatures"; the owner reads it
+    /// after ShowDialog and runs the update so output appears in the main console.
+    /// </summary>
+    public bool UpdateRequested { get; private set; }
+
     /// <summary>Allows dragging the borderless dialog. Called from: window MouseLeftButtonDown.</summary>
     private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ButtonState == MouseButtonState.Pressed) DragMove();
+    }
+
+    /// <summary>
+    /// Closes the dialog signalling that an update was requested, so the owner
+    /// can run it. Called from: the "Update signatures" button.
+    /// </summary>
+    private void UpdateSignatures_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateRequested = true;
+        DialogResult = true;
     }
 
     /// <summary>Closes the dialog. Called from: Close button.</summary>
