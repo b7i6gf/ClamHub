@@ -12,7 +12,7 @@ An open-source application for using [ClamAV](https://www.clamav.net) with a GUI
 
 I usually use ClamAV with a batch script on my personal computer. It's rudimentary, not easy to use and very restrictive. A GUI would be nice... I thought. Sure there are some similar applications on GitHub, like [ClamShield](https://github.com/orloxgr/ClamShield); [ClamAV Native Win32](https://oss.netfarm.it/clamav/) or [ClamUI](https://github.com/linx-systems/clamui) on Linux. I was missing a portable version you can carry around on a flash drive, something with a user friendly GUI and clear instructions and feedback...
 
-So I sat down and worked on this project. Of course I had some help from Claude Opus 4.8 and Fable 5 for this, just like our AI overlord insists! (Roko’s Basilisk is watching)
+So I sat down and worked on this project. I put a lot of effort into designing an all around experience with usability in mind. Of course I had some coding help from Claude Opus 4.8 and Fable 5 for this, just like our AI overlord insists! (Roko’s Basilisk is watching)
 
 And here it is:
 
@@ -36,7 +36,7 @@ ClamHub puts a clean, dark UI on top of ClamAV so you do not have to deal with t
 <img src="Docs/Scan.png" alt="ClamHub" width="700"/>
 </p>
 Pick or Drag and Drop a file, folder or entire drive and hit 'Start Scan'. The app prefers the ClamAV daemon (`clamdscan`) for parallel multi-core scanning and falls back to `clamscan` automatically if the daemon is not running
-You can filter by file extension (e.g. `exe dll sys`) or even exclude Paths systemwide or for a particular scan to skip irrelevant files
+You can filter by file extension (e.g. `exe dll sys`) or even exclude Paths systemwide or for a particular scan to skip irrelevant files. You can also query multiple files and folders at once so scanning becomes more efficient.
 Run a **memory scan** to check running processes and kill them instantly
 Infected files can be reported only, moved to quarantine, or deleted - your choice per scan
 Scans can be cancelled at any point
@@ -61,7 +61,7 @@ Shows every file ClamHub has quarantined, with the original path, date and file 
 - **Restore** a file back to exactly where it came from
 - **Delete** it permanently
 - **Check it on VirusTotal** using its stored hash
-- 
+  
 ---
 
 ### History tab
@@ -70,6 +70,8 @@ Shows every file ClamHub has quarantined, with the original path, date and file 
 </p>
 Every completed scan is saved automatically. The history table shows when it ran, what was scanned, which scanner was used, how long it took and how many infected files were found. Click any entry to see the full list of detections for that scan. You can clear the history or open the raw JSON file directly.
 Deletion of Entries or the whole history is supported
+
+---
 
 ### Settings tab
 <p align="center">
@@ -84,27 +86,6 @@ You can also:
 - Enable the Windows Explorer context menu entry ("Scan with ClamHub") for all files
 - Enter your VirusTotal API key to enable the VirusTotal funktion in Check Hash and Quarantine
 - Open the `clamd.conf` and `freshclam.conf` directly if you need to
-
----
-
-## Folder layout
-
-```
-<AppFolder>
-|- ClamHub.exe
-|- settings.json
-|- ClamAV\
-|   |- clamd.exe, clamdscan.exe, clamscan.exe, freshclam.exe (+ DLLs)
-|   |- clamd.conf
-|   |- freshclam.conf
-|   |- database\
-|- Logs\
-|   |- history.json
-|   |- INFECTED_FILES.txt
-|   |- clamd-scan.log, clamd.log, freshclam.log
-|- Quarantine\
-    |- quarantine.json
-```
 
 ---
 
@@ -126,8 +107,6 @@ You can also:
 - Navigate to the [releases](https://github.com/b7i6gf/ClamHub/releases) by hand or via the "About" section in the app
 - simply download the latest official release of ClamHub and replace your old ClamHub.exe with it
   
-
-
 ---
 
 ## Building it yourself
