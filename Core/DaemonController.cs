@@ -98,6 +98,64 @@ public static class DaemonController
     }
 
     /// <summary>
+    /// Tells a running clamd to reload its signature database and waits until it
+    /// answers PING again. Right after a freshclam update the daemon can briefly
+    /// refuse connections while it swaps databases, so both the RELOAD command
+    /// and the readiness check retry on "Connection refused" instead of giving
+    /// up. Returns true once the daemon is responsive again with the new DB.
+    /// Called from: MainWindow after a signature update (manual or on startup).
+    /// </summary>
+    public static async Task<bool> ReloadAsync(Action<string>? onStatus = null,
+        int attempts = 10, int delayMs = 1000)
+    {
+        onStatus?.Invoke("Reloading the daemon with the updated signatures...");
+
+        // Phase 1: deliver the RELOAD command, retrying while connections are refused.
+        bool sent = false, announced = false;
+        for (int i = 1; i <= attempts && !sent; i++)
+        {
+            try
+            {
+                using var client = new TcpClient();
+                using var cts = new CancellationTokenSource(2000);
+                await client.ConnectAsync("127.0.0.1", SettingsManager.Current.ClamdPort, cts.Token);
+                var cmd = Encoding.ASCII.GetBytes("zRELOAD\0");
+                await client.GetStream().WriteAsync(cmd, cts.Token);
+                sent = true;
+            }
+            catch
+            {
+                if (!announced)
+                {
+                    onStatus?.Invoke("Daemon not reachable yet (connection refused), retrying...");
+                    announced = true;
+                }
+                if (i < attempts) await Task.Delay(delayMs);
+            }
+        }
+
+        if (!sent)
+        {
+            onStatus?.Invoke("Could not reach the daemon to reload signatures; it may need a restart.");
+            return false;
+        }
+
+        // Phase 2: wait until it responds to PING again (reload finished).
+        for (int i = 0; i < attempts; i++)
+        {
+            if (await IsRunningAsync(1500))
+            {
+                onStatus?.Invoke("Daemon reloaded the updated signatures.");
+                return true;
+            }
+            await Task.Delay(delayMs);
+        }
+
+        onStatus?.Invoke("Daemon is taking longer than expected to reload; check its status.");
+        return false;
+    }
+
+    /// <summary>
     /// Stops clamd gracefully via the SHUTDOWN command, kill as fallback.
     /// Called from: MainWindow stop button (manual stop). On app close the
     /// stronger KillAllOwned is used instead.

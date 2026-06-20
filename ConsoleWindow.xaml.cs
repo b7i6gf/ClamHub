@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Windows;
 
 namespace ClamHub;
@@ -21,22 +22,15 @@ public partial class ConsoleWindow : Window
         InitializeComponent();
     }
 
-    /// <summary>Replaces the whole text (used to seed existing output on open).</summary>
-    public void SetText(string text)
-    {
-        ConsoleBox.Text = text;
-        ConsoleBox.ScrollToEnd();
-    }
+    /// <summary>Seeds the window with the output collected so far (URLs clickable).
+    /// Called from: MainWindow.OpenConsoleWindow.</summary>
+    public void SetLines(IEnumerable<string> lines) => ConsoleFormatting.SetLines(ConsoleBox, lines);
 
-    /// <summary>Appends one line and scrolls to the end. Called from: MainWindow.AppendLine.</summary>
-    public void AppendLine(string line)
-    {
-        ConsoleBox.AppendText(line + Environment.NewLine);
-        ConsoleBox.ScrollToEnd();
-    }
+    /// <summary>Appends one line (URLs become clickable). Called from: MainWindow.AppendLine.</summary>
+    public void AppendLine(string line) => ConsoleFormatting.AppendLine(ConsoleBox, line);
 
     /// <summary>Clears the output. Called from: MainWindow when the console is cleared.</summary>
-    public void Clear() => ConsoleBox.Clear();
+    public void Clear() => ConsoleFormatting.Clear(ConsoleBox);
 
     /// <summary>Clears both windows. Called from: the Clear button.</summary>
     private void Clear_Click(object sender, RoutedEventArgs e) => ClearRequested?.Invoke();

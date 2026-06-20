@@ -111,11 +111,12 @@ public partial class MainWindow : Window
     {
         ShowConfigStatus();
         ActionCombo.SelectedIndex = (int)SettingsManager.Current.DefaultAction;
-        MultiScanCheck.IsChecked = SettingsManager.Current.MultiScan;
         InitializeSettingsTab();
         InitializeProfiles();
         InitializeHistory();
         InitializeQuarantine();
+        // Keep the Scan-tab VirusTotal button in sync with the chosen target.
+        TargetBox.TextChanged += (_, _) => RefreshVirusTotalButtons();
         RefreshVirusTotalButtons();
         InitializeConsoleView();
         ResetSessionExclusions();
@@ -129,7 +130,6 @@ public partial class MainWindow : Window
 
         var info = await UpdateManager.GetVersionInfoAsync();
         _versionInfo = info;
-        VersionText.Text = info != null ? FormatVersionLine(info) : "ClamAV binaries not found";
 
         if (info == null)
         {
@@ -140,10 +140,14 @@ public partial class MainWindow : Window
 
         if (SettingsManager.Current.UpdateOnStart)
         {
+            bool daemonWasRunning = await DaemonController.IsRunningAsync();
             await RunGuarded(() => UpdateManager.RunUpdateAsync(AppendLine));
-            // Re-query after the update so the database versions in the header are current.
+            // Reload an already running daemon (with retries) so it uses the new DB.
+            if (daemonWasRunning)
+                await RunGuarded(() => DaemonController.ReloadAsync(AppendLine));
+            // Re-query after the update so the About box shows current versions.
             var updated = await UpdateManager.GetVersionInfoAsync();
-            if (updated != null) { _versionInfo = updated; VersionText.Text = FormatVersionLine(updated); }
+            if (updated != null) _versionInfo = updated;
         }
 
         if (SettingsManager.Current.AutoStartDaemon && SettingsManager.Current.UseDaemon)
@@ -187,7 +191,7 @@ public partial class MainWindow : Window
             ScanEngine.ScanMode.Path,
             TargetBox.Text,
             (InfectedFileAction)ActionCombo.SelectedIndex,
-            MultiScanCheck.IsChecked == true,
+            SettingsManager.Current.MultiScan,
             ScanEngine.ParseExtensions(ExtensionsBox.Text),
             false,
             _sessionExcludeDirs,
@@ -196,19 +200,16 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Shows the ConfigManager results from app startup in the status line.
-    /// Called from: InitializeAsync.
+    /// Writes the ConfigManager results from app startup into the console as
+    /// status messages. Called from: InitializeAsync.
     /// </summary>
     private void ShowConfigStatus()
     {
         var c = App.StartupCheck;
-        var parts = new List<string>
-        {
-            c is { FreshClamCreated: true } ? "freshclam.conf created" : "freshclam.conf found",
-            c is { ClamdCreated: true } ? "clamd.conf created" : "clamd.conf found",
-            "settings.json loaded"
-        };
-        ConfigStatusText.Text = string.Join("  |  ", parts);
+        AppendSection("STARTUP");
+        AppendLine(c is { FreshClamCreated: true } ? "freshclam.conf created" : "freshclam.conf found");
+        AppendLine(c is { ClamdCreated: true } ? "clamd.conf created" : "clamd.conf found");
+        AppendLine("settings.json loaded");
     }
 
     /// <summary>
@@ -224,28 +225,6 @@ public partial class MainWindow : Window
             : "Daemon: not running";
         StartDaemonButton.IsEnabled = !running && !_busy;
         StopDaemonButton.IsEnabled = running && !_busy;
-
-        // Multi-scan only applies to the daemon, so disable and gray it when down.
-        MultiScanCheck.IsEnabled = running;
-        MultiScanCheck.Foreground = (Brush)FindResource(running ? "TextBrush" : "MutedTextBrush");
-        MultiScanCheck.ToolTip = running
-            ? "Let the daemon scan with multiple threads"
-            : "Available only while the daemon is running";
-    }
-
-    /// <summary>
-    /// Builds the title bar line from the collected version info:
-    /// "ClamAV x.y.z      |      Database Versions: daily | main | bytecode -- date".
-    /// The date is ClamAV's own ctime format and is kept verbatim.
-    /// Called from: InitializeAsync and Update_Click.
-    /// </summary>
-    private static string FormatVersionLine(UpdateManager.VersionInfo v)
-    {
-        string daily = v.Daily?.Version ?? "?";
-        string main = v.Main?.Version ?? "?";
-        string bytecode = v.Bytecode?.Version ?? "?";
-        var line = $"{v.Engine}      |      Database Versions: {daily} | {main} | {bytecode}";
-        return string.IsNullOrWhiteSpace(v.BuildTime) ? line : $"{line} -- {v.BuildTime}";
     }
 
     /// <summary>
@@ -259,6 +238,7 @@ public partial class MainWindow : Window
         _busy = true;
         StartDaemonButton.IsEnabled = StopDaemonButton.IsEnabled = false;
         UpdateButton.IsEnabled = ScanButton.IsEnabled = MemoryScanButton.IsEnabled = false;
+        ScanVirusTotalButton.IsEnabled = false;
         try
         {
             await action();
@@ -267,6 +247,7 @@ public partial class MainWindow : Window
         {
             _busy = false;
             UpdateButton.IsEnabled = ScanButton.IsEnabled = MemoryScanButton.IsEnabled = true;
+            RefreshVirusTotalButtons();
             await RefreshDaemonStatusAsync();
         }
     }
@@ -284,9 +265,14 @@ public partial class MainWindow : Window
         => await RunGuarded(async () =>
         {
             AppendSection("SIGNATURE UPDATE");
+            bool daemonWasRunning = await DaemonController.IsRunningAsync();
             await UpdateManager.RunUpdateAsync(AppendLine);
+            // A running daemon can briefly refuse connections while it swaps
+            // databases; reload it with retries so it picks up the new signatures.
+            if (daemonWasRunning)
+                await DaemonController.ReloadAsync(AppendLine);
             var info = await UpdateManager.GetVersionInfoAsync();
-            if (info != null) { _versionInfo = info; VersionText.Text = FormatVersionLine(info); }
+            if (info != null) _versionInfo = info;
         });
 
     /// <summary>File picker for the scan target. Called from: XAML Click binding.</summary>
@@ -306,6 +292,18 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Opens the scan queue window; if the user chooses Scan all, scans every
+    /// queued file and folder in turn in the main console.
+    /// Called from: XAML Click binding (Queue button).
+    /// </summary>
+    private async void ScanQueue_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new ScanQueueWindow { Owner = this };
+        if (window.ShowDialog() == true && window.Targets.Count > 0)
+            await RunQueueScan(window.Targets);
+    }
+
+    /// <summary>
     /// Builds ScanOptions from the UI inputs and starts a path scan.
     /// Called from: XAML Click binding of the Start scan button.
     /// </summary>
@@ -315,7 +313,7 @@ public partial class MainWindow : Window
             ScanEngine.ScanMode.Path,
             TargetBox.Text,
             (InfectedFileAction)ActionCombo.SelectedIndex,
-            MultiScanCheck.IsChecked == true,
+            SettingsManager.Current.MultiScan,
             ScanEngine.ParseExtensions(ExtensionsBox.Text),
             false,
             _sessionExcludeDirs,
@@ -348,112 +346,171 @@ public partial class MainWindow : Window
     /// Called from: Scan_Click and MemoryScan_Click.
     /// </summary>
     private async Task RunScanGuarded(ScanEngine.ScanOptions options)
-    {
-        await RunGuarded(async () =>
+        => await RunGuarded(async () => { await ScanOneAsync(options); });
+
+    /// <summary>
+    /// Runs every queued target in turn in the main console (each with its normal
+    /// per-scan summary), using the current Scan-tab settings (action, extensions
+    /// and session exclusions), then prints a combined QUEUE SUMMARY. A cancelled
+    /// scan stops the rest of the queue. Wrapped in one RunGuarded so the whole
+    /// batch is a single busy operation. Called from: ScanQueue_Click.
+    /// </summary>
+    private async Task RunQueueScan(IReadOnlyList<string> targets)
+        => await RunGuarded(async () =>
         {
-            string title = options.Mode == ScanEngine.ScanMode.Memory
-                ? "MEMORY SCAN"
-                : $"SCAN  {options.TargetPath}";
-            AppendSection(title);
-
-            InfectedCountText.Text = "";
-            _scanCts = new CancellationTokenSource();
-            CancelScanButton.IsEnabled = true;
-            ScanIndicator.Visibility = Visibility.Visible;
-            ScanIndicatorText.Text = options.Mode == ScanEngine.ScanMode.Memory
-                ? "Memory scan running..."
-                : $"Scanning {options.TargetPath} ...";
-            var watch = System.Diagnostics.Stopwatch.StartNew();
-            try
+            var summary = new List<(string Target, string Status)>();
+            foreach (var raw in targets)
             {
-                var result = await ScanEngine.RunScanAsync(options, line =>
-                {
-                    AppendLine(line);
-                    MaybePlayDetectionSound(line);
-                }, _scanCts.Token);
-                watch.Stop();
+                var target = raw.Replace("\"", "").Trim();
+                if (target.Length == 0) continue;
 
-                if (!result.Started && result.Error != null)
-                {
-                    AppendLine(result.Error);
-                    return;
-                }
+                var options = new ScanEngine.ScanOptions(
+                    ScanEngine.ScanMode.Path,
+                    target,
+                    (InfectedFileAction)ActionCombo.SelectedIndex,
+                    SettingsManager.Current.MultiScan,
+                    ScanEngine.ParseExtensions(ExtensionsBox.Text),
+                    false,
+                    _sessionExcludeDirs,
+                    _sessionExcludeExts);
 
-                // Persist findings so infected files can be located later.
-                if (result.InfectedLines.Count > 0)
-                {
-                    string desc = options.Mode == ScanEngine.ScanMode.Memory
-                        ? "Memory scan"
-                        : $"Scan of {options.TargetPath}";
-                    LogManager.AppendInfected(result.InfectedLines, desc);
-                }
+                var result = await ScanOneAsync(options);
 
-                // Append only what ClamAV's own SCAN SUMMARY does not already show.
-                // No leading blank line: the whole output of one scan stays together.
-                AppendLine($"Duration: {watch.Elapsed:hh\\:mm\\:ss\\.f}");
-                AppendLine($"Scanner:  {(result.UsedDaemon ? "clamdscan (daemon, parallel)" : "clamscan")}");
-
-                // clamdscan does not report a scanned-file count; optionally add
-                // it by counting the target on a background thread (no scan slowdown).
-                if (result.UsedDaemon && options.Mode == ScanEngine.ScanMode.Path
-                    && SettingsManager.Current.CountFilesOnDaemonScan
-                    && !string.IsNullOrWhiteSpace(options.TargetPath))
-                {
-                    int fileCount = await Task.Run(() => SafeCountFiles(options.TargetPath));
-                    AppendLine($"Files in target: {fileCount}");
-                }
-
-                AppendLine($"Result:   {result.ExitCode switch
-                {
-                    0 => "CLEAN",
-                    1 => "INFECTIONS FOUND",
-                    _ => $"COMPLETED WITH ERRORS (exit code {result.ExitCode}, see log)"
-                }}");
-
-                int found = result.InfectedLines.Count;
-                if (found == 0)
-                {
-                    InfectedCountText.Text = "Clean";
-                    InfectedCountText.Foreground = (Brush)FindResource("OkBrush");
-                }
-                else
-                {
-                    // Wording matches the chosen action. Quarantine is updated
-                    // below to the actually moved count (only successful moves).
-                    InfectedCountText.Text = options.Action switch
+                string status =
+                    !result.Started ? (result.Error ?? "not started")
+                    : result.ExitCode switch
                     {
-                        InfectedFileAction.Remove => $"{found} infected file(s) removed",
-                        InfectedFileAction.Quarantine => $"{found} infected file(s) found",
-                        _ => $"{found} infected file(s) found"
+                        0 => "CLEAN",
+                        1 => $"{result.InfectedLines.Count} infected",
+                        _ => $"errors (exit {result.ExitCode})"
                     };
-                    InfectedCountText.Foreground = (Brush)FindResource("DangerBrush");
-                }
+                summary.Add((target, status));
 
-                // Persist the scan into the history tab.
-                RecordScan(options, result, watch.Elapsed);
+                // A user cancellation aborts the remaining targets.
+                if (result.Error == "Cancelled") break;
+            }
 
-                // If the user chose Quarantine, move the infected files now.
-                // ClamAV scanned report-only (see ScanEngine.AppendAction); the
-                // GUI moves files itself to preserve their original paths.
-                if (options.Action == InfectedFileAction.Quarantine && found > 0)
-                {
-                    int moved = QuarantineInfectedFiles(result.InfectedLines);
-                    if (moved > 0)
-                        InfectedCountText.Text = moved == found
-                            ? $"{moved} infected file(s) quarantined"
-                            : $"{moved} of {found} infected file(s) quarantined";
-                    else
-                        InfectedCountText.Text = $"{found} infected file(s) found (quarantine failed)";
-                }
-            }
-            finally
-            {
-                ScanIndicator.Visibility = Visibility.Collapsed;
-                CancelScanButton.IsEnabled = false;
-                _scanCts.Dispose();
-                _scanCts = null;
-            }
+            AppendSection("QUEUE SUMMARY");
+            if (summary.Count == 0)
+                AppendLine("No valid targets in the queue.");
+            else
+                foreach (var (t, s) in summary)
+                    AppendLine($"{s,-24}  {t}");
         });
+
+    /// <summary>
+    /// Runs a single scan and prints its full output plus the custom summary block
+    /// with statistics clamdscan omits (engine, target, duration, result). Returns
+    /// the raw ScanResult so a batch run can aggregate it. Does NOT wrap itself in
+    /// RunGuarded; the caller does. Called from: RunScanGuarded (single scan) and
+    /// RunQueueScan (each queued target).
+    /// </summary>
+    private async Task<ScanEngine.ScanResult> ScanOneAsync(ScanEngine.ScanOptions options)
+    {
+        string title = options.Mode == ScanEngine.ScanMode.Memory
+            ? "MEMORY SCAN"
+            : $"SCAN  {options.TargetPath}";
+        AppendSection(title);
+
+        InfectedCountText.Text = "";
+        _scanCts = new CancellationTokenSource();
+        CancelScanButton.IsEnabled = true;
+        ScanIndicator.Visibility = Visibility.Visible;
+        ScanIndicatorText.Text = options.Mode == ScanEngine.ScanMode.Memory
+            ? "Memory scan running..."
+            : $"Scanning {options.TargetPath} ...";
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var result = await ScanEngine.RunScanAsync(options, line =>
+            {
+                AppendLine(line);
+                MaybePlayDetectionSound(line);
+            }, _scanCts.Token);
+            watch.Stop();
+
+            if (!result.Started && result.Error != null)
+            {
+                AppendLine(result.Error);
+                return result;
+            }
+
+            // Persist findings so infected files can be located later.
+            if (result.InfectedLines.Count > 0)
+            {
+                string desc = options.Mode == ScanEngine.ScanMode.Memory
+                    ? "Memory scan"
+                    : $"Scan of {options.TargetPath}";
+                LogManager.AppendInfected(result.InfectedLines, desc);
+            }
+
+            // Append only what ClamAV's own SCAN SUMMARY does not already show.
+            // No leading blank line: the whole output of one scan stays together.
+            AppendLine($"Duration: {watch.Elapsed:hh\\:mm\\:ss\\.f}");
+            AppendLine($"Scanner:  {(result.UsedDaemon ? "clamdscan (daemon, parallel)" : "clamscan")}");
+
+            // clamdscan does not report a scanned-file count; optionally add
+            // it by counting the target on a background thread (no scan slowdown).
+            if (result.UsedDaemon && options.Mode == ScanEngine.ScanMode.Path
+                && SettingsManager.Current.CountFilesOnDaemonScan
+                && !string.IsNullOrWhiteSpace(options.TargetPath))
+            {
+                int fileCount = await Task.Run(() => SafeCountFiles(options.TargetPath));
+                AppendLine($"Files in target: {fileCount}");
+            }
+
+            AppendLine($"Result:   {result.ExitCode switch
+            {
+                0 => "CLEAN",
+                1 => "INFECTIONS FOUND",
+                _ => $"COMPLETED WITH ERRORS (exit code {result.ExitCode}, see log)"
+            }}");
+
+            int found = result.InfectedLines.Count;
+            if (found == 0)
+            {
+                InfectedCountText.Text = "Clean";
+                InfectedCountText.Foreground = (Brush)FindResource("OkBrush");
+            }
+            else
+            {
+                // Wording matches the chosen action. Quarantine is updated
+                // below to the actually moved count (only successful moves).
+                InfectedCountText.Text = options.Action switch
+                {
+                    InfectedFileAction.Remove => $"{found} infected file(s) removed",
+                    InfectedFileAction.Quarantine => $"{found} infected file(s) found",
+                    _ => $"{found} infected file(s) found"
+                };
+                InfectedCountText.Foreground = (Brush)FindResource("DangerBrush");
+            }
+
+            // Persist the scan into the history tab.
+            RecordScan(options, result, watch.Elapsed);
+
+            // If the user chose Quarantine, move the infected files now.
+            // ClamAV scanned report-only (see ScanEngine.AppendAction); the
+            // GUI moves files itself to preserve their original paths.
+            if (options.Action == InfectedFileAction.Quarantine && found > 0)
+            {
+                int moved = QuarantineInfectedFiles(result.InfectedLines);
+                if (moved > 0)
+                    InfectedCountText.Text = moved == found
+                        ? $"{moved} infected file(s) quarantined"
+                        : $"{moved} of {found} infected file(s) quarantined";
+                else
+                    InfectedCountText.Text = $"{found} infected file(s) found (quarantine failed)";
+            }
+
+            return result;
+        }
+        finally
+        {
+            ScanIndicator.Visibility = Visibility.Collapsed;
+            CancelScanButton.IsEnabled = false;
+            _scanCts.Dispose();
+            _scanCts = null;
+        }
     }
 
     /// <summary>
@@ -498,6 +555,16 @@ public partial class MainWindow : Window
         VirusTotalButton.ToolTip = hasKey ? activeTip : missingTip;
         QuarantineVtButton.IsEnabled = hasKey;
         QuarantineVtButton.ToolTip = hasKey ? activeTip : missingTip;
+
+        // Scan tab: VirusTotal looks up exactly one file, so enable it only when
+        // the scan target is a single existing file (a folder cannot be hashed)
+        // and no scan is currently running.
+        bool targetIsFile = System.IO.File.Exists(TargetBox.Text.Replace("\"", "").Trim());
+        ScanVirusTotalButton.IsEnabled = hasKey && targetIsFile && !_busy;
+        ScanVirusTotalButton.ToolTip =
+            !hasKey ? missingTip
+            : targetIsFile ? activeTip
+            : "Select a single file as the scan target (folders cannot be looked up on VirusTotal).";
     }
 
     /// <summary>
@@ -667,10 +734,37 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Clears the console box (and the separate window). Called from: XAML Click binding.</summary>
-    private void ClearConsole_Click(object sender, RoutedEventArgs e)
+    private void ClearConsole_Click(object sender, RoutedEventArgs e) => ClearConsoleAll();
+
+    /// <summary>
+    /// Clears both console views and the backing line list. Called from:
+    /// ClearConsole_Click and the separate window's Clear button.
+    /// </summary>
+    private void ClearConsoleAll()
     {
-        ConsoleBox.Clear();
+        _consoleLines.Clear();
+        ConsoleFormatting.Clear(ConsoleBox);
         _consoleWindow?.Clear();
+    }
+
+    /// <summary>
+    /// Scan tab VirusTotal button: looks up the scan target file's SHA256 on
+    /// VirusTotal. Enabled only for a single existing file (see
+    /// RefreshVirusTotalButtons). Only the hash leaves the machine, never the file.
+    /// Called from: XAML Click binding of the Scan-tab VirusTotal button.
+    /// </summary>
+    private async void ScanVirusTotal_Click(object sender, RoutedEventArgs e)
+    {
+        var path = TargetBox.Text.Replace("\"", "").Trim();
+        ScanVirusTotalButton.IsEnabled = false;
+        try
+        {
+            await RunVirusTotalLookup(path, path);
+        }
+        finally
+        {
+            RefreshVirusTotalButtons();
+        }
     }
 
     /// <summary>
@@ -797,6 +891,35 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Restarts the GUI by relaunching the running EXE and closing this instance.
+    /// Bundled ClamAV processes are stopped by the OnExit/Window_Closing cleanup.
+    /// Called from: XAML Click binding (Restart button in Settings Maintenance).
+    /// </summary>
+    private void Restart_Click(object sender, RoutedEventArgs e)
+    {
+        var exe = Environment.ProcessPath;
+        if (exe == null)
+        {
+            AppendLine("Could not determine the executable path for the restart.");
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = exe,
+                UseShellExecute = true
+            });
+            Application.Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            AppendLine($"Restart failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Restarts the GUI elevated via UAC prompt and closes this instance.
     /// Replaces the ADMINSTART section of the old batch script, but without a
     /// hardcoded shortcut path: it relaunches the running EXE itself.
@@ -851,9 +974,6 @@ public partial class MainWindow : Window
             _ => "A N T I V I R U S"
         };
 
-        // The daemon control panel is only meaningful for scanning.
-        DaemonPanel.Visibility = index == 0 ? Visibility.Visible : Visibility.Collapsed;
-
         // Refresh the data tables when their tab is opened so the newest entries
         // always show (also refreshed in the background right after a scan).
         if (index == 2) BindQuarantine();
@@ -887,6 +1007,10 @@ public partial class MainWindow : Window
     private bool _onHistoryTab;
     private bool _consoleHiddenForTab;
     private ConsoleWindow? _consoleWindow;
+
+    /// <summary>Raw console lines, kept so the separate window can be seeded and so
+    /// AppendSection can tell whether the console already has content.</summary>
+    private readonly List<string> _consoleLines = new();
     private bool _applyingConsoleView;
 
     // Console column width when docked right (the user can make this wider).
@@ -1068,12 +1192,8 @@ public partial class MainWindow : Window
     {
         if (_consoleWindow != null) { _consoleWindow.Activate(); return; }
         _consoleWindow = new ConsoleWindow { Owner = this };
-        _consoleWindow.SetText(ConsoleBox.Text);
-        _consoleWindow.ClearRequested += () =>
-        {
-            ConsoleBox.Clear();
-            _consoleWindow?.Clear();
-        };
+        _consoleWindow.SetLines(_consoleLines);
+        _consoleWindow.ClearRequested += () => ClearConsoleAll();
         _consoleWindow.OpenLogsRequested += () => OpenLogsFolder_Click(this, new RoutedEventArgs());
         // If the user closes the window, fall back to the bottom dock.
         _consoleWindow.Closed += (_, _) =>
@@ -1242,7 +1362,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Shows a custom modal confirm dialog (dark, About-box style) and returns
-    /// true when the confirm button is chosen. Replaces the Windows MessageBox.
+    /// true when the confirm button is chosen. Replaces the Windows message box.
     /// Called from: delete/restore/restart confirmations across the tabs.
     /// </summary>
     private bool Confirm(string title, string message, string confirmLabel, string cancelLabel)
@@ -1251,7 +1371,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Shows a custom modal info dialog (dark, About-box style) with a single OK
-    /// button. Replaces the Windows MessageBox. Called from: the settings
+    /// button. Replaces the Windows message box. Called from: the settings
     /// save-failure path.
     /// </summary>
     private void Inform(string title, string message)
@@ -1265,8 +1385,8 @@ public partial class MainWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
-            ConsoleBox.AppendText(line + Environment.NewLine);
-            ConsoleBox.ScrollToEnd();
+            _consoleLines.Add(line);
+            ConsoleFormatting.AppendLine(ConsoleBox, line);
             _consoleWindow?.AppendLine(line);
         });
     }
@@ -1278,7 +1398,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void AppendSection(string title)
     {
-        if (ConsoleBox.Text.Length > 0) AppendLine("");
+        if (_consoleLines.Count > 0) AppendLine("");
         AppendLine($"================ {title} | {DateTime.Now:HH:mm:ss} ================");
     }
 

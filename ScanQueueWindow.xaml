@@ -1,0 +1,84 @@
+<Window x:Class="ClamHub.ScanQueueWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="Scan queue" Height="480" Width="640"
+        MinHeight="360" MinWidth="520"
+        WindowStartupLocation="CenterOwner" WindowStyle="None" ResizeMode="CanResize"
+        Background="{StaticResource BgBrush}">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="6"
+                            CornerRadius="0" GlassFrameThickness="0"
+                            UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+
+    <Border BorderBrush="{StaticResource WindowBorderBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="36"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Title bar -->
+            <Grid Grid.Row="0" Background="{StaticResource TitleBarBrush}">
+                <TextBlock Text="Scan queue" FontWeight="SemiBold"
+                           VerticalAlignment="Center" Margin="14,0,0,0"/>
+                <Button HorizontalAlignment="Right" Style="{StaticResource CloseCaptionButton}"
+                        Click="Close_Click" ToolTip="Close"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Path Data="M0,0 L10,10 M0,10 L10,0" Stroke="{StaticResource TextBrush}"
+                          StrokeThickness="1"/>
+                </Button>
+            </Grid>
+
+            <!-- Body: target list and its buttons -->
+            <Grid Grid.Row="1" Margin="20,16,20,8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,12"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           Text="Add the files and folders to scan, then Scan all. Each target is scanned in turn and the results appear in the main window. You can also drop files or folders into the list."/>
+
+                <Border Grid.Row="1" Background="{StaticResource PanelBrush}" CornerRadius="6"
+                        Padding="2" AllowDrop="True"
+                        PreviewDragOver="TargetList_DragOver" Drop="TargetList_Drop">
+                    <ListBox x:Name="TargetList" Background="Transparent" BorderThickness="0"
+                             Foreground="{StaticResource TextBrush}" SelectionMode="Extended"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                </Border>
+
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button Content="Add files..." Height="28" Margin="0,0,6,0"
+                            Click="AddFiles_Click"/>
+                    <Button Content="Add folder..." Height="28" Margin="0,0,6,0"
+                            Click="AddFolder_Click"/>
+                    <Button Content="Remove selected" Height="28" Margin="0,0,6,0"
+                            Click="RemoveSelected_Click"/>
+                    <Button Content="Clear all" Height="28" Click="ClearAll_Click"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- Footer: count and actions -->
+            <Grid Grid.Row="2" Margin="20,4,20,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" x:Name="StatusText" VerticalAlignment="Center"
+                           TextWrapping="Wrap" Margin="0,0,12,0"
+                           Foreground="{StaticResource MutedTextBrush}"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Content="Close" Width="90" Height="32" Margin="0,0,10,0"
+                            Click="Close_Click"/>
+                    <Button x:Name="ScanAllButton" Content="Scan all" Width="110" Height="32"
+                            FontWeight="SemiBold" Click="ScanAll_Click"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

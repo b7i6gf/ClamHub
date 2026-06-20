@@ -45,11 +45,13 @@
             </Grid>
 
             <!-- Console output -->
-            <TextBox Grid.Row="1" x:Name="ConsoleBox" IsReadOnly="True"
-                     Background="#FF17181C" Foreground="#FFD6D6D6" BorderThickness="0"
-                     FontFamily="Consolas" FontSize="12" Padding="8"
-                     VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap"
-                     HorizontalScrollBarVisibility="Auto"/>
+            <RichTextBox Grid.Row="1" x:Name="ConsoleBox" IsReadOnly="True" IsDocumentEnabled="True"
+                         Background="#FF17181C" Foreground="#FFD6D6D6" BorderThickness="0"
+                         FontFamily="Consolas" FontSize="12" Padding="8"
+                         VerticalScrollBarVisibility="Auto"
+                         HorizontalScrollBarVisibility="Disabled">
+                <FlowDocument PagePadding="0"/>
+            </RichTextBox>
         </Grid>
     </Border>
 </Window>

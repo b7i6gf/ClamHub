@@ -6,7 +6,7 @@ namespace ClamHub;
 /// <summary>
 /// Reusable modal dialog in the same dark style as the About box. Used for
 /// confirmations (confirm + cancel button) and information (single button).
-/// Replaces the Windows MessageBox so the app has no standard system dialogs.
+/// Replaces the Windows message box so the app has no standard system dialogs.
 /// Opened from: MainWindow Confirm/Inform helpers.
 /// </summary>
 public partial class MessageDialog : Window

@@ -72,16 +72,19 @@ public partial class MainWindow
         RefreshContextMenuState();
         LoadConfEditors();
 
-        // Wire dirty marking. Checkbox Click fires only on user interaction, not
-        // on the programmatic IsChecked above, so no spurious dirty on load.
-        SetUseDaemon.Click += (_, _) => MarkSettingsDirty();
-        SetAutoStart.Click += (_, _) => MarkSettingsDirty();
-        SetUpdateOnStart.Click += (_, _) => MarkSettingsDirty();
-        SetSound.Click += (_, _) => MarkSettingsDirty();
-        SetCountFiles.Click += (_, _) => MarkSettingsDirty();
-        SetMultiScan.Click += (_, _) => MarkSettingsDirty();
-        SetDefaultAction.SelectionChanged += (_, _) => MarkSettingsDirty();
-        SetVtKey.TextChanged += (_, _) => MarkSettingsDirty();
+        // GUI settings auto save: every change writes settings.json immediately.
+        // Checkbox Click fires only on user interaction, not on the programmatic
+        // IsChecked above, so the initial load does not save. The combo
+        // SelectionChanged and the key field LostFocus are guarded by
+        // _settingsLoading inside the save methods.
+        SetUseDaemon.Click += (_, _) => AutoSaveGuiSettings();
+        SetAutoStart.Click += (_, _) => AutoSaveGuiSettings();
+        SetUpdateOnStart.Click += (_, _) => AutoSaveGuiSettings();
+        SetSound.Click += (_, _) => AutoSaveGuiSettings();
+        SetCountFiles.Click += (_, _) => AutoSaveGuiSettings();
+        SetMultiScan.Click += (_, _) => AutoSaveGuiSettings();
+        SetDefaultAction.SelectionChanged += (_, _) => AutoSaveGuiSettings();
+        SetVtKey.LostFocus += (_, _) => SaveVtKeyOnBlur();
 
         _settingsLoading = false;
         SetSettingsStatus("", null);
@@ -307,11 +310,14 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Saves the GUI settings column into settings.json.
-    /// Called from: XAML Click binding (Save GUI settings).
+    /// Reads the GUI settings column into settings.json and saves immediately.
+    /// Used for auto save, so it is silent on success apart from a status line.
+    /// Called from: the change handlers wired in InitializeSettingsTab and from
+    /// SaveVtKeyOnBlur.
     /// </summary>
-    private void SaveGuiSettings_Click(object sender, RoutedEventArgs e)
+    private void AutoSaveGuiSettings()
     {
+        if (_settingsLoading) return;
         try
         {
             var s = SettingsManager.Current;
@@ -328,28 +334,35 @@ public partial class MainWindow
             var typedKey = SetVtKey.Text.Trim();
             if (typedKey != VtKeyMask)
                 s.VirusTotalApiKey = typedKey;
+
             if (!SettingsManager.Save())
             {
-                // The console is hidden on the Settings tab, so also use a dialog.
                 SetSettingsStatus("Settings could not be saved.", "DangerBrush");
-                Inform("Save failed",
-                    "The settings could not be saved. The location may be read-only or the disk full.");
                 return;
             }
 
-            // Re-mask without triggering a dirty mark.
-            _settingsLoading = true;
-            SetVtKey.Text = string.IsNullOrEmpty(s.VirusTotalApiKey) ? "" : VtKeyMask;
-            _settingsLoading = false;
-
-            MultiScanCheck.IsChecked = s.MultiScan;
             RefreshVirusTotalButtons();
-            SetSettingsStatus("GUI settings saved.", "OkBrush");
+            SetSettingsStatus("Settings saved.", "OkBrush");
         }
         catch (Exception ex)
         {
             SetSettingsStatus($"Save failed: {ex.Message}", "DangerBrush");
         }
+    }
+
+    /// <summary>
+    /// Saves a freshly entered VirusTotal API key when the field loses focus,
+    /// then re-masks it so the stored key is never shown.
+    /// Called from: the LostFocus wiring in InitializeSettingsTab.
+    /// </summary>
+    private void SaveVtKeyOnBlur()
+    {
+        if (_settingsLoading) return;
+        AutoSaveGuiSettings();
+        _settingsLoading = true;
+        var key = SettingsManager.Current.VirusTotalApiKey;
+        SetVtKey.Text = string.IsNullOrEmpty(key) ? "" : VtKeyMask;
+        _settingsLoading = false;
     }
 
     /// <summary>

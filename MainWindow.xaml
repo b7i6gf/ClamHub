@@ -130,52 +130,34 @@
             <RowDefinition x:Name="ConsoleRow" Height="0"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,0,0,8">
-            <TextBlock Text="ClamHub" FontSize="26" FontWeight="SemiBold"/>
-            <TextBlock x:Name="VersionText" FontSize="13" Margin="12,5,0,0"
-                       Foreground="{StaticResource MutedTextBrush}"/>
-        </StackPanel>
+        <!-- Header: app name on the left, daemon status and controls on the right -->
+        <Grid Grid.Row="0" Grid.Column="0" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="ClamHub" FontSize="26" FontWeight="SemiBold"
+                       VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                <Ellipse x:Name="DaemonDot" Width="12" Height="12" Margin="0,1,8,0"
+                         Fill="{StaticResource MutedTextBrush}" VerticalAlignment="Center"/>
+                <TextBlock x:Name="DaemonStatusText" Text="Daemon status: checking..."
+                           FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"
+                           Margin="0,0,16,0"/>
+                <Button x:Name="StartDaemonButton" Content="Start daemon" Width="108" Height="30"
+                        Margin="0,0,8,0" Click="StartDaemon_Click"/>
+                <Button x:Name="StopDaemonButton" Content="Stop daemon" Width="108" Height="30"
+                        Click="StopDaemon_Click"/>
+            </StackPanel>
+        </Grid>
 
-        <!-- Main area: tabs with the daemon panel directly beneath them. Fills
-             the available space; the console docks below or to the right. -->
+        <!-- Main area: the tab card. Fills the available space; the console
+             docks below or to the right. -->
         <Grid Grid.Row="1" Grid.Column="0">
             <Grid.RowDefinitions>
                 <RowDefinition x:Name="TabCardRow" Height="*"/>
-                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-
-            <!-- Daemon and update control panel (shown on the Scan tab only) -->
-            <Border Grid.Row="1" x:Name="DaemonPanel" Background="{StaticResource PanelBrush}"
-                    CornerRadius="8" Padding="16" Margin="0,16,0,0">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Grid.Column="0">
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <Ellipse x:Name="DaemonDot" Width="12" Height="12" Margin="0,2,8,0"
-                                     Fill="{StaticResource MutedTextBrush}"/>
-                            <TextBlock x:Name="DaemonStatusText" Text="Daemon status: checking..."
-                                       FontSize="15" FontWeight="SemiBold"/>
-                        </StackPanel>
-                        <TextBlock x:Name="ConfigStatusText" Foreground="{StaticResource MutedTextBrush}"
-                                   TextWrapping="Wrap"/>
-                    </StackPanel>
-
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button x:Name="StartDaemonButton" Content="Start daemon" Width="110" Height="32"
-                                Margin="0,0,8,0" Click="StartDaemon_Click"/>
-                        <Button x:Name="StopDaemonButton" Content="Stop daemon" Width="110" Height="32"
-                                Margin="0,0,8,0" Click="StopDaemon_Click"/>
-                        <Button x:Name="AdminRestartButton" Content="Restart as admin" Width="125" Height="32"
-                                Click="RestartAsAdmin_Click"
-                                ToolTip="Needed for memory scans of system processes and protected folders"/>
-                    </StackPanel>
-                </Grid>
-            </Border>
 
             <!-- Tabs: Scan and Hash Verifier -->
             <Border Grid.Row="0" Background="{StaticResource PanelBrush}" CornerRadius="8"
@@ -244,6 +226,7 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="Target:" VerticalAlignment="Center"
                                        Margin="0,0,10,0" FontWeight="SemiBold"/>
@@ -268,6 +251,9 @@
                                     Margin="8,0,0,0" Click="BrowseFile_Click"/>
                             <Button Grid.Column="3" Content="Folder..." Width="70" Height="30"
                                     Margin="8,0,0,0" Click="BrowseFolder_Click"/>
+                            <Button Grid.Column="4" Content="Queue..." Width="80" Height="30"
+                                    Margin="8,0,0,0" Click="ScanQueue_Click"
+                                    ToolTip="Open the scan queue to scan several files and folders in one run"/>
                         </Grid>
 
                         <!-- Action / options row (now second) -->
@@ -278,8 +264,6 @@
                                 <ComboBoxItem Content="Quarantine"/>
                                 <ComboBoxItem Content="Remove"/>
                             </ComboBox>
-                            <CheckBox x:Name="MultiScanCheck" Content="Multi-threaded (daemon)"
-                                      Margin="20,0,0,0" IsChecked="True"/>
                             <TextBlock Text="Only extensions:" VerticalAlignment="Center" Margin="20,0,8,0"
                                        ToolTip="Optional, forces clamscan instead of the daemon"/>
                             <Grid>
@@ -319,6 +303,7 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
                             <StackPanel Grid.Column="0" Orientation="Horizontal">
@@ -335,7 +320,12 @@
                             <Button Grid.Column="3" x:Name="CancelScanButton" Content="Cancel"
                                     Width="90" Height="34" Margin="0,0,10,0"
                                     IsEnabled="False" Click="CancelScan_Click"/>
-                            <Button Grid.Column="4" x:Name="ScanButton" Content="Start scan"
+                            <Button Grid.Column="4" x:Name="ScanVirusTotalButton" Content="VirusTotal"
+                                    Width="120" Height="34" Margin="0,0,10,0" IsEnabled="False"
+                                    Click="ScanVirusTotal_Click"
+                                    ToolTipService.ShowOnDisabled="True"
+                                    ToolTip="Look up the file's SHA256 on VirusTotal. Only the hash is sent, never the file."/>
+                            <Button Grid.Column="5" x:Name="ScanButton" Content="Start scan"
                                     Width="120" Height="34" FontWeight="SemiBold"
                                     Click="Scan_Click"/>
                         </Grid>
@@ -713,18 +703,20 @@
                                        Foreground="{StaticResource MutedTextBrush}"
                                        TextWrapping="Wrap" Margin="0,2,0,0"/>
 
-                            <Button Content="Save GUI settings" Width="140" Height="30"
-                                    HorizontalAlignment="Left" Margin="0,12,0,0"
-                                    Click="SaveGuiSettings_Click"/>
-
-                            <Separator Margin="0,16,0,12" Background="#FF3A3D46"/>
+                            <Separator Margin="0,6,0,8" Background="#FF3A3D46"/>
                             <TextBlock Text="Maintenance" FontWeight="SemiBold" Margin="0,0,0,8"/>
                             <Button x:Name="UpdateButton" Content="Update signatures" Width="160" Height="30"
                                     HorizontalAlignment="Left" Margin="0,0,0,8" Click="Update_Click"
                                     ToolTip="Run freshclam to update the signature databases"/>
                             <Button Content="Rebuild all configs" Width="160" Height="30"
-                                    HorizontalAlignment="Left" Click="RebuildAllConfigs_Click"
+                                    HorizontalAlignment="Left" Margin="0,0,0,8" Click="RebuildAllConfigs_Click"
                                     ToolTip="Rewrite clamd.conf and freshclam.conf with correct database and log paths (asks whether to keep your settings)"/>
+                            <Button x:Name="RestartButton" Content="Restart" Width="160" Height="30"
+                                    HorizontalAlignment="Left" Margin="0,0,0,8" Click="Restart_Click"
+                                    ToolTip="Relaunch ClamHub"/>
+                            <Button x:Name="AdminRestartButton" Content="Restart as admin" Width="160" Height="30"
+                                    HorizontalAlignment="Left" Click="RestartAsAdmin_Click"
+                                    ToolTip="Needed for memory scans of system processes and protected folders"/>
                         </StackPanel>
                         </ScrollViewer>
 
@@ -822,11 +814,13 @@
                                 Click="ClearConsole_Click"/>
                     </StackPanel>
                 </Grid>
-                <TextBox Grid.Row="1" x:Name="ConsoleBox" IsReadOnly="True"
-                         Background="#FF17181C" Foreground="#FFD6D6D6" BorderThickness="0"
-                         FontFamily="Consolas" FontSize="12" Padding="8"
-                         VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap"
-                         HorizontalScrollBarVisibility="Auto"/>
+                <RichTextBox Grid.Row="1" x:Name="ConsoleBox" IsReadOnly="True" IsDocumentEnabled="True"
+                             Background="#FF17181C" Foreground="#FFD6D6D6" BorderThickness="0"
+                             FontFamily="Consolas" FontSize="12" Padding="8"
+                             VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Disabled">
+                    <FlowDocument PagePadding="0"/>
+                </RichTextBox>
             </Grid>
         </Border>
 

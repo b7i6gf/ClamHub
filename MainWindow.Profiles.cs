@@ -53,7 +53,6 @@ public partial class MainWindow
 
         TargetBox.Text = profile.TargetPath;
         ActionCombo.SelectedIndex = (int)profile.Action;
-        MultiScanCheck.IsChecked = profile.MultiScan;
         ExtensionsBox.Text = profile.Extensions;
         // Profiles do not carry their own exclusions; switching profile returns
         // the scan-session exclusions to the persistent settings defaults.
@@ -82,7 +81,6 @@ public partial class MainWindow
             Name = name,
             TargetPath = TargetBox.Text.Trim(),
             Action = (InfectedFileAction)ActionCombo.SelectedIndex,
-            MultiScan = MultiScanCheck.IsChecked == true,
             Extensions = ExtensionsBox.Text.Trim()
         });
 

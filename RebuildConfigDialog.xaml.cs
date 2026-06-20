@@ -6,7 +6,7 @@ namespace ClamHub;
 /// <summary>
 /// Small modal dialog (same dark style as the About box) that asks how to
 /// rebuild a config file: keep the current settings, reset to defaults, or
-/// cancel. Replaces the plain Windows MessageBox.
+/// cancel. Replaces the plain Windows message box.
 /// Opened from: MainWindow.Settings.cs (AskRebuild).
 /// </summary>
 public partial class RebuildConfigDialog : Window
