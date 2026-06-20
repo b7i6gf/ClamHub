@@ -45,7 +45,7 @@ Scans can be cancelled at any point
 
 ### Hash Checker tab
 <p align="center">
-<img src="Docs/Hash checker.png" alt="ClamHub" width="700"/>
+<img src="Docs/Hash Verifier.png" alt="ClamHub" width="700"/>
 </p>
 Drop or browse to any file and compute its hash. Supports SHA-1, SHA-256, SHA-384, SHA-512 and MD5 - individually or all at once. Paste an expected hash to get an instant match / mismatch result
 If you have a VirusTotal API key set up (in Settings), you can look up the file's SHA-256 directly from this tab. Only the hash is sent - the file never leaves your machine
