@@ -1,4 +1,4 @@
-# ClamHub
+<img width="673" height="397" alt="image" src="https://github.com/user-attachments/assets/22c8823d-802a-4ea7-bb19-7caeb9d0be07" /># ClamHub
 
 <p align="center">
   <img src="Docs/ClamHub.png" alt="ClamHub" width="400"/>
@@ -35,11 +35,11 @@ ClamHub puts a clean, dark UI on top of ClamAV so you do not have to deal with t
 <p align="center">
 <img src="Docs/Scan.png" alt="ClamHub" width="700"/>
 </p>
-Pick or Drag and Drop a file, folder or entire drive and hit 'Start Scan'. The app prefers the ClamAV daemon (`clamdscan`) for parallel multi-core scanning and falls back to `clamscan` automatically if the daemon is not running
-You can filter by file extension (e.g. `exe dll sys`) or even exclude Paths systemwide or for a particular scan to skip irrelevant files. You can also query multiple files and folders at once so scanning becomes more efficient.
-Run a **memory scan** to check running processes and kill them instantly
-Infected files can be reported only, moved to quarantine, or deleted - your choice per scan
-Scans can be cancelled at any point
+- Pick or Drag and Drop a file, folder or entire drive and hit 'Start Scan'. The app prefers the ClamAV daemon (`clamdscan`) for parallel multi-core scanning and falls back to `clamscan` automatically if the daemon is not running.
+- You can filter by file extension (e.g. `exe dll sys`) or even exclude Paths systemwide or for a particular scan to skip irrelevant files. You can also query multiple files and folders at once so scanning becomes more efficient!
+- Run a **memory scan** to check running processes and kill them instantly.
+Infected files can be reported only, moved to quarantine, or deleted - your choice per scan.
+- Scans can be cancelled at any point.
 
 ---
 
@@ -47,8 +47,9 @@ Scans can be cancelled at any point
 <p align="center">
 <img src="Docs/Hash Verifier.png" alt="ClamHub" width="700"/>
 </p>
-Drop or browse to any file and compute its hash. Supports SHA-1, SHA-256, SHA-384, SHA-512 and MD5 - individually or all at once. Paste an expected hash to get an instant match / mismatch result
-If you have a VirusTotal API key set up (in Settings), you can look up the file's SHA-256 directly from this tab. Only the hash is sent - the file never leaves your machine
+- Drop or browse to any file and compute its hash. Supports SHA-1, SHA-256, SHA-384, SHA-512 and MD5 - individually or all at once.
+- Paste an expected hash to get an instant match / mismatch result
+- If you have a VirusTotal API key set up (in Settings), you can look up the file's SHA-256 directly from this tab. Only the hash is sent - the file never leaves your machine
 
 ---
 
@@ -68,8 +69,11 @@ Shows every file ClamHub has quarantined, with the original path, date and file 
 <p align="center">
 <img src="Docs/History.png" alt="ClamHub" width="700"/>
 </p>
-Every completed scan is saved automatically. The history table shows when it ran, what was scanned, which scanner was used, how long it took and how many infected files were found. Click any entry to see the full list of detections for that scan. You can clear the history or open the raw JSON file directly.
-Deletion of Entries or the whole history is supported
+
+- Every completed scan is saved automatically. The history table shows when it ran, what was scanned, which scanner was used, how long it took and how many infected files were found.
+- Click any entry to see the full list of detections for that scan.
+- You can clear the history or open the raw JSON file directly.
+- Deletion of entries or the whole history is supported as well.
 
 ---
 
@@ -84,8 +88,11 @@ From Settings you can configure the default behaviour of the app, as well as the
 You can also:
 - Add or remove path and extension exclusions under Daemon > File system > Exclude Path
 - Enable the Windows Explorer context menu entry ("Scan with ClamHub") for all files
-- Enter your VirusTotal API key to enable the VirusTotal funktion in Check Hash and Quarantine
+- Enter your VirusTotal API key to enable the VirusTotal feature in Scan, Hash Verifier and Quarantine
+- Run diagnostics with the built-in clamconf.exe.
+- Always start in administrator mode.
 - Open the `clamd.conf` and `freshclam.conf` directly if you need to
+- and many more...
 
 ### Update Checker
 <p align="center">
@@ -94,6 +101,10 @@ You can also:
 ---
 
 - Keeping the app up-to-date is simple. You can update the app via the "Check for updates" button in the Settings tab or by navigating to the "About" window in the top right corner of the app.
+<p align="center">
+<img src="Docs/About.png" alt="ClamHub" width="700"/>
+</p>
+
 - ClamHub will show you the newest updates there. Press download and wait.
 
 
@@ -101,17 +112,13 @@ You can also:
 
 1. Place `ClamHub.exe` in any folder
 2. Run the .exe and select one of the following options.
-  a) automatic download: The official ClamAV build is automatically being downloaded and extracted next to the ClamHub.exe. Fully automatic and no further clicks needed.
-  b) manually select ClamAV: It does what it says. Search for your own ClamAV installation and select the folder. It automatically detects all databases and executables within. ClamAV can be downloaded at [clamav.net](https://www.clamav.net/downloads)
+<p align="center">
+<img src="Docs/Startup.png" alt="ClamHub" width="700"/>
+</p>
+
+  - a) Download automatically: The official ClamAV build is automatically being downloaded and extracted next to the ClamHub.exe. Fully automatic and no further clicks needed.
+  - b) Manually select existing ClamAV folder: It does what it says. Search for your own ClamAV installation and select the folder. It automatically detects all databases and executables within. ClamAV can be downloaded at [clamav.net](https://www.clamav.net/downloads)
 3. Have fun hunting for viruses :)
-
-
-## Update the app
-
-- Navigate to the [releases](https://github.com/b7i6gf/ClamHub/releases) by hand or via the "About" section in the app
-- simply download the latest official release of ClamHub and replace your old ClamHub.exe with it
-  
----
 
 ## Building it yourself
 
