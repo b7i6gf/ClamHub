@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using ClamHub.Core;
 using ClamHub.Models;
@@ -42,8 +43,33 @@ public partial class MainWindow : Window
         InitializeComponent();
         // Surface non fatal background errors (e.g. a failed save) in the console.
         AppNotifications.ErrorOccurred += OnBackgroundError;
+        // Stop table columns from being dragged down to zero width and vanishing.
+        ClampColumnWidths(HistoryGridView, MinColumnWidth);
+        ClampColumnWidths(QuarantineGridView, MinColumnWidth);
         RestoreWindowSize();
         Loaded += async (_, _) => await InitializeAsync();
+    }
+
+    /// <summary>Smallest width (px) a table column may be dragged to.</summary>
+    private const double MinColumnWidth = 60;
+
+    /// <summary>
+    /// Stops GridView columns from being resized narrower than MinColumnWidth, so a
+    /// column cannot be dragged until it disappears. A width watcher on each column
+    /// snaps any smaller value back to the minimum. Called from: the constructor.
+    /// </summary>
+    private static void ClampColumnWidths(GridView grid, double min)
+    {
+        var descriptor = DependencyPropertyDescriptor.FromProperty(
+            GridViewColumn.WidthProperty, typeof(GridViewColumn));
+        foreach (var column in grid.Columns)
+        {
+            descriptor.AddValueChanged(column, (_, _) =>
+            {
+                if (column.Width < min)
+                    column.Width = min;
+            });
+        }
     }
 
     /// <summary>
@@ -133,15 +159,21 @@ public partial class MainWindow : Window
 
         if (info == null)
         {
-            AppendLine("ClamAV binaries are missing. Copy the portable ClamAV files into the ClamAV folder and restart.");
-            await RefreshDaemonStatusAsync();
-            return;
+            await OfferClamAvSetupAsync();
+            // If the user just set up ClamAV, _versionInfo is now populated and the
+            // normal startup continues (signature download + daemon start). If it is
+            // still missing (manual setup or a failed/declined download), stop here.
+            if (_versionInfo == null)
+            {
+                await RefreshDaemonStatusAsync();
+                return;
+            }
         }
 
         if (SettingsManager.Current.UpdateOnStart)
         {
             bool daemonWasRunning = await DaemonController.IsRunningAsync();
-            await RunGuarded(() => UpdateManager.RunUpdateAsync(AppendLine));
+            await RunGuarded(() => RunSignatureUpdateAsync());
             // Reload an already running daemon (with retries) so it uses the new DB.
             if (daemonWasRunning)
                 await RunGuarded(() => DaemonController.ReloadAsync(AppendLine));
@@ -260,13 +292,44 @@ public partial class MainWindow : Window
     private async void StopDaemon_Click(object sender, RoutedEventArgs e)
         => await RunGuarded(() => { AppendSection("DAEMON STOP"); return DaemonController.StopAsync(AppendLine); });
 
+    /// <summary>
+    /// Runs a freshclam signature update. ONLY when no databases exist yet (the
+    /// initial download, which is slow) it shows a dark wait window and disables
+    /// the main window until the download finishes; routine updates show nothing.
+    /// The wait window closes automatically when done. Called from: Update_Click
+    /// and the startup update-on-start path.
+    /// </summary>
+    private async Task RunSignatureUpdateAsync()
+    {
+        bool initialCreation = !UpdateManager.DatabasesPresent();
+        DbDownloadWindow? wait = null;
+        if (initialCreation)
+        {
+            wait = new DbDownloadWindow { Owner = this };
+            wait.Show();
+            IsEnabled = false; // gate the whole main window until the first download ends
+        }
+        try
+        {
+            await UpdateManager.RunUpdateAsync(AppendLine);
+        }
+        finally
+        {
+            if (wait != null)
+            {
+                IsEnabled = true;
+                wait.CloseForced();
+            }
+        }
+    }
+
     /// <summary>Update signatures button. Called from: XAML Click binding.</summary>
     private async void Update_Click(object sender, RoutedEventArgs e)
         => await RunGuarded(async () =>
         {
             AppendSection("SIGNATURE UPDATE");
             bool daemonWasRunning = await DaemonController.IsRunningAsync();
-            await UpdateManager.RunUpdateAsync(AppendLine);
+            await RunSignatureUpdateAsync();
             // A running daemon can briefly refuse connections while it swaps
             // databases; reload it with retries so it picks up the new signatures.
             if (daemonWasRunning)
@@ -911,6 +974,7 @@ public partial class MainWindow : Window
                 FileName = exe,
                 UseShellExecute = true
             });
+            SingleInstance.ReleasePrimary(); // only after the relaunch started
             Application.Current.Shutdown();
         }
         catch (Exception ex)
@@ -948,11 +1012,12 @@ public partial class MainWindow : Window
                 UseShellExecute = true,
                 Verb = "runas"
             });
+            SingleInstance.ReleasePrimary(); // only after the elevated relaunch started
             Application.Current.Shutdown();
         }
         catch (System.ComponentModel.Win32Exception)
         {
-            // User declined the UAC prompt, keep the current instance running.
+            // User declined the UAC prompt, keep the current instance (and its mutex).
             AppendLine("Elevation cancelled, still running without administrator rights.");
         }
     }
@@ -1013,17 +1078,23 @@ public partial class MainWindow : Window
     private readonly List<string> _consoleLines = new();
     private bool _applyingConsoleView;
 
-    // Console column width when docked right (the user can make this wider).
-    private const double RightConsoleWidth = 420;
-    private const double RightConsoleMargin = 16;
-    private double RightDockExtra => RightConsoleWidth + RightConsoleMargin;
+    // Console geometry when docked on the right. The main area keeps a FIXED width
+    // (so dragging the window edge only resizes the console, never the main area)
+    // and the console column is a star that grows/shrinks with the window.
+    private const double RightConsoleMargin = 16;    // gap between the main card and the console
+    private const double RightConsoleDefault = 420;  // console width right after switching to right
+    private const double RightConsoleMin = 280;      // smallest the console may shrink to
+    private const double RootChromeWidth = 42;       // RootGrid margins (2x20) + window border (2x1)
+    private double RightDockGrowth => RightConsoleMargin + RightConsoleDefault;   // width added on enter
+    private double RightDockMinGrowth => RightConsoleMargin + RightConsoleMin;    // min extra width
+    // Window MinWidth from XAML, captured once so it can be toggled for the dock.
+    private double _baseMinWidth;
+    // Fixed main-column width while docked right (the base content width).
+    private double _mainFixedWidth;
 
     // Window width while NOT docked right, so we can restore it exactly. Updated
     // on user resize via the SizeChanged hook. Set during construction.
     private double _normalWidth;
-    // Main column width captured when entering right dock; the column is frozen
-    // to this so the main area never stretches.
-    private double _mainColWidth;
     // Guards width changes we make ourselves from the SizeChanged capture.
     private bool _resizingForDock;
 
@@ -1072,19 +1143,17 @@ public partial class MainWindow : Window
 
         if (enteringRight)
         {
-            // Freeze the main column to the content width it has in non-right mode
-            // (window minus the 20px RootGrid margins and 1px window borders), so
-            // it stays identical regardless of which tab is active right now.
-            _mainColWidth = Math.Max(200, _normalWidth - 42);
-            MinWidth += RightDockExtra;
+            // Keep the main area at its base width and add the console to the right;
+            // the window can shrink until only the console's minimum remains.
+            MinWidth = _baseMinWidth + RightDockMinGrowth;
             if (WindowState == WindowState.Normal)
-                Width = _normalWidth + RightDockExtra;
+                Width = _normalWidth + RightDockGrowth;
         }
         else if (leavingRight)
         {
-            // Lower the minimum BEFORE shrinking, otherwise Width gets clamped to
-            // the old (larger) minimum and the window stays wide.
-            MinWidth -= RightDockExtra;
+            // Restore the base minimum BEFORE shrinking, otherwise Width gets clamped
+            // to the larger right-dock minimum and the window stays wide.
+            MinWidth = _baseMinWidth;
             if (WindowState == WindowState.Normal)
                 Width = _normalWidth;
         }
@@ -1146,9 +1215,9 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Docks the given console border at the bottom (main card fixed height,
-    /// console row grows with the window) or on the right (main column frozen to
-    /// its captured width, console column grows). Shared by the normal output
-    /// console and the History output panel so both honor the same view setting.
+    /// console row grows with the window) or on the right (main column flexes,
+    /// console column is a fixed width panel). Shared by the normal output console
+    /// and the History output panel so both honor the same view setting.
     /// Called from: ApplyConsoleLayout.
     /// </summary>
     private void PositionDockedConsole(System.Windows.Controls.Border border, ConsolePosition mode)
@@ -1177,12 +1246,13 @@ public partial class MainWindow : Window
             System.Windows.Controls.Grid.SetColumnSpan(border, 1);
             border.Margin = new Thickness(16, 0, 0, 0);
             border.Visibility = Visibility.Visible;
-            // Main fills vertically; width is frozen so the console (star column)
-            // absorbs extra width when the window is widened.
+            // Main keeps a FIXED width; the console (star column) takes the rest,
+            // so dragging the window edge resizes only the console. The MinWidth set
+            // on entering right stops the shrink once the console reaches its minimum.
             MainRow.Height = new GridLength(1, GridUnitType.Star);
             TabCardRow.Height = new GridLength(1, GridUnitType.Star);
             ConsoleRow.Height = new GridLength(0);
-            MainColumn.Width = new GridLength(_mainColWidth);
+            MainColumn.Width = new GridLength(_mainFixedWidth);
             ConsoleColumn.Width = new GridLength(1, GridUnitType.Star);
         }
     }
@@ -1237,8 +1307,12 @@ public partial class MainWindow : Window
         }).IsChecked = true;
         _applyingConsoleView = false;
 
-        // Seed the remembered normal width and track later user resizes.
+        // Seed the remembered normal width and track later user resizes. Capture
+        // the XAML MinWidth and derive the fixed main width (base content width)
+        // before SetConsoleMode can change MinWidth for the right dock.
         _normalWidth = Width;
+        _baseMinWidth = MinWidth;
+        _mainFixedWidth = Math.Max(200, _baseMinWidth - RootChromeWidth);
         SizeChanged += Window_SizeChanged;
 
         // _consoleMode starts at Bottom; SetConsoleMode performs any transition.
@@ -1355,9 +1429,198 @@ public partial class MainWindow : Window
     private void About_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new AboutWindow(_versionInfo) { Owner = this };
-        // Run the update after the dialog closes so its output shows in the console.
-        if (dialog.ShowDialog() == true && dialog.UpdateRequested)
-            Update_Click(this, new RoutedEventArgs());
+        // Run any follow-up after the dialog closes so its output shows in the console.
+        if (dialog.ShowDialog() == true)
+        {
+            if (dialog.UpdateRequested)
+                Update_Click(this, new RoutedEventArgs());
+            else if (dialog.CheckUpdatesRequested)
+                OpenUpdateCheck();
+        }
+    }
+
+    /// <summary>App/engine update check button. Called from: Maintenance XAML Click binding and About_Click.</summary>
+    private async void OpenUpdateCheck() => await ShowUpdateCheckAsync();
+
+    /// <summary>
+    /// Opens the GitHub update dialog (latest ClamHub + ClamAV releases with their
+    /// date). If ClamAV was downloaded and unpacked from it, refreshes the version
+    /// info and daemon status. Called from: OpenUpdateCheck and OfferClamAvSetupAsync.
+    /// </summary>
+    private async Task ShowUpdateCheckAsync()
+    {
+        var asm = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        string appVersion = asm != null ? $"{asm.Major}.{asm.Minor}.{asm.Build}" : "1.0.0";
+
+        var dialog = new UpdateCheckWindow(appVersion, _versionInfo?.Engine) { Owner = this };
+        dialog.ShowDialog();
+
+        if (dialog.ClamAvWasInstalled)
+        {
+            AppendSection("CLAMAV SETUP");
+            AppendLine("ClamAV was downloaded and unpacked into the ClamAV folder.");
+            UpdateClamAvPathDisplay();
+            var info = await UpdateManager.GetVersionInfoAsync();
+            if (info != null) _versionInfo = info;
+            await ValidateConfigAndReportAsync();
+            await RefreshDaemonStatusAsync();
+        }
+    }
+
+    /// <summary>
+    /// Shown at startup when the ClamAV binaries are missing: asks whether to set
+    /// up ClamAV automatically or manually. "Download automatically" opens the
+    /// update dialog (which shows the version and release date before downloading);
+    /// "Set up manually" prints the copy instructions and opens the ClamAV folder.
+    /// Neither option cancels anything. Called from: InitializeAsync when version
+    /// info is unavailable.
+    /// </summary>
+    private async Task OfferClamAvSetupAsync()
+    {
+        AppendSection("CLAMAV SETUP");
+        AppendLine("ClamAV was not found.");
+
+        bool auto = new MessageDialog(
+            "ClamAV not found",
+            "ClamHub could not find ClamAV. Download and set it up automatically, " +
+            "or select an existing ClamAV folder on this PC yourself.",
+            "Download automatically",
+            "Select existing folder") { Owner = this }.ShowDialog() == true;
+
+        if (auto)
+            await ShowUpdateCheckAsync();
+        else
+            await LocateClamAvFolderAsync();
+    }
+
+    /// <summary>
+    /// Opens a folder picker for the user to select an EXISTING ClamAV folder. If
+    /// it holds the ClamAV executables, the app uses that folder, saves the path,
+    /// regenerates the configs for the new location and refreshes version + daemon
+    /// status. The user never copies files anywhere; an existing install is used in
+    /// place. Returns true on success. Called from: OfferClamAvSetupAsync (manual)
+    /// and ChangeClamAvFolder_Click (Settings).
+    /// </summary>
+    private async Task<bool> LocateClamAvFolderAsync()
+    {
+        var picker = new OpenFolderDialog
+        {
+            Title = "Select the folder that contains ClamAV (clamd.exe, freshclam.exe, ...)"
+        };
+        if (System.IO.Directory.Exists(AppPaths.ClamAvDir))
+            picker.InitialDirectory = AppPaths.ClamAvDir;
+        if (picker.ShowDialog() != true) return false;
+
+        string chosen = picker.FolderName;
+        if (!AppPaths.ContainsClamAvBinaries(chosen))
+        {
+            Inform("ClamAV not found here",
+                "The selected folder does not contain the ClamAV executables " +
+                "(clamd.exe, clamscan.exe, clamdscan.exe, freshclam.exe). " +
+                "Select the folder where ClamAV is installed.");
+            return false;
+        }
+
+        DaemonController.KillAllOwned(); // stop any daemon running from the old folder
+        AppPaths.SetClamAvDir(chosen);
+        SettingsManager.Current.ClamAvPath = chosen;
+        SettingsManager.Save();
+
+        AppendSection("CLAMAV FOLDER");
+        AppendLine("Using ClamAV at: " + chosen);
+        try
+        {
+            AppPaths.EnsureDirectories();
+            ConfigManager.RebuildAllConfigs(transferValues: true);
+            AppendLine("Configuration updated for this location.");
+        }
+        catch (Exception ex)
+        {
+            AppendLine("Could not write the ClamAV configuration here: " + ex.Message);
+            AppendLine("If this folder is write-protected, choose a writable location.");
+        }
+
+        UpdateClamAvPathDisplay();
+        await ValidateConfigAndReportAsync();
+        var info = await UpdateManager.GetVersionInfoAsync();
+        if (info != null) _versionInfo = info;
+        await RefreshDaemonStatusAsync();
+        return true;
+    }
+
+    /// <summary>Shows the resolved ClamAV folder in Settings. Called from: InitializeSettingsTab and LocateClamAvFolderAsync.</summary>
+    private void UpdateClamAvPathDisplay()
+    {
+        if (ClamAvPathText != null)
+            ClamAvPathText.Text = AppPaths.ClamAvDir;
+    }
+
+    /// <summary>Settings "Change ClamAV folder" button. Called from: Settings XAML Click binding.</summary>
+    private async void ChangeClamAvFolder_Click(object sender, RoutedEventArgs e)
+        => await LocateClamAvFolderAsync();
+
+    /// <summary>App/engine update check button. Called from: Maintenance XAML Click binding.</summary>
+    private void CheckUpdates_Click(object sender, RoutedEventArgs e) => OpenUpdateCheck();
+
+    /// <summary>
+    /// Maintenance "Run diagnostics" button: runs clamconf and dumps its engine,
+    /// build, database and config report into the console for troubleshooting.
+    /// Called from: Maintenance XAML Click binding.
+    /// </summary>
+    private async void RunDiagnostics_Click(object sender, RoutedEventArgs e)
+        => await RunGuarded(async () =>
+        {
+            AppendSection("DIAGNOSTICS (clamconf)");
+            if (!ClamConf.Available)
+            {
+                AppendLine("clamconf.exe was not found in the ClamAV folder.");
+                SetSettingsStatus("clamconf.exe not found; diagnostics unavailable.", "WarnBrush");
+                return;
+            }
+            var result = await ClamConf.RunAsync(ClamConf.ConfigDirArg, AppendLine);
+            if (result.Started)
+                AppendLine($"clamconf finished (exit code {result.ExitCode}).");
+            SetSettingsStatus("Diagnostics finished. The full output is in the console.", "OkBrush");
+        });
+
+    /// <summary>
+    /// Runs clamconf against the app's config folder and prints a short summary
+    /// (problems, compiled features, per-database signature counts) to the console.
+    /// Does nothing useful when clamconf is absent. Called from: after a config
+    /// rebuild, a ClamAV folder change and an auto-install.
+    /// </summary>
+    private async Task ValidateConfigAndReportAsync()
+    {
+        if (!ClamConf.Available)
+        {
+            AppendLine("clamconf.exe not present; skipping configuration validation.");
+            return;
+        }
+        AppendLine("Validating configuration (clamconf)...");
+        var report = await ClamConf.ValidateAsync();
+        if (!report.Ran)
+        {
+            AppendLine("clamconf could not run; skipping validation.");
+            return;
+        }
+
+        if (report.Issues.Count == 0)
+            AppendLine(report.ExitCode == 0
+                ? "Configuration valid."
+                : $"No problems parsed, but clamconf exited with code {report.ExitCode}.");
+        else
+        {
+            AppendLine("Configuration problems found:");
+            foreach (var issue in report.Issues) AppendLine("  " + issue);
+        }
+
+        foreach (var feature in report.Features) AppendLine(feature);
+
+        if (report.Signatures.Count > 0)
+        {
+            AppendLine("Databases:");
+            foreach (var sig in report.Signatures) AppendLine("  " + sig);
+        }
     }
 
     /// <summary>
@@ -1454,7 +1717,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            // In right-dock mode the window is widened by RightDockExtra; store the
+            // In right-dock mode the window is widened by RightDockGrowth; store the
             // tracked normal width instead so it restores at the right size.
             s.WindowWidth = _consoleMode == ConsolePosition.Right && _normalWidth > 0
                 ? _normalWidth : Width;

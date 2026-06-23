@@ -1,3 +1,6 @@
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Security.Principal;
 using System.Windows;
 using ClamHub.Core;
 
@@ -28,6 +31,17 @@ public partial class App : Application
     {
         ParseArguments(e.Args);
 
+        // Settings drive the elevation choice, so load them first.
+        SettingsManager.Load();
+
+        // Optionally relaunch elevated before anything else (and before claiming the
+        // single-instance mutex), so the elevated copy becomes the primary instance.
+        if (SettingsManager.Current.AlwaysStartAsAdmin && !IsElevated() && TryRelaunchElevated())
+        {
+            Shutdown();
+            return;
+        }
+
         // If another ClamHub is already running, hand it our scan request (or a
         // plain activate) and exit instead of opening a second window.
         if (!SingleInstance.ClaimPrimary())
@@ -40,10 +54,50 @@ public partial class App : Application
             return;
         }
 
+        // Re-apply a previously chosen ClamAV folder (if it still has the binaries)
+        // before folders and configs are created, so they target the right place.
+        var savedClamAv = SettingsManager.Current.ClamAvPath;
+        if (!string.IsNullOrWhiteSpace(savedClamAv) && AppPaths.ContainsClamAvBinaries(savedClamAv))
+            AppPaths.SetClamAvDir(savedClamAv);
+
         AppPaths.EnsureDirectories();
-        SettingsManager.Load();
         StartupCheck = ConfigManager.EnsureConfigs();
         base.OnStartup(e);
+    }
+
+    /// <summary>True when the process already runs with administrator rights. Called from: OnStartup.</summary>
+    private static bool IsElevated()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+    }
+
+    /// <summary>
+    /// Relaunches the app elevated via the UAC prompt, forwarding any scan path.
+    /// Returns true if the elevated copy was started (so this one should exit), or
+    /// false if the prompt was declined or the path is unknown (continue normally).
+    /// Called from: OnStartup when AlwaysStartAsAdmin is set.
+    /// </summary>
+    private static bool TryRelaunchElevated()
+    {
+        var exe = Environment.ProcessPath;
+        if (exe == null) return false;
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = exe,
+                UseShellExecute = true,
+                Verb = "runas",
+                Arguments = string.IsNullOrWhiteSpace(StartupScanPath) ? "" : $"--scan \"{StartupScanPath}\""
+            });
+            return true;
+        }
+        catch (Win32Exception)
+        {
+            // UAC declined: fall back to running without elevation.
+            return false;
+        }
     }
 
     /// <summary>

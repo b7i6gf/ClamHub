@@ -1,0 +1,42 @@
+<Window x:Class="ClamHub.DbDownloadWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="Preparing virus databases" Height="212" Width="460"
+        MinHeight="212" MinWidth="460"
+        WindowStartupLocation="CenterOwner" WindowStyle="None" ResizeMode="NoResize"
+        ShowInTaskbar="False" Background="{StaticResource BgBrush}">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="0"
+                            CornerRadius="0" GlassFrameThickness="0"
+                            UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+
+    <Border BorderBrush="{StaticResource WindowBorderBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="36"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Title bar: no buttons, the window closes itself when the download ends -->
+            <Grid Grid.Row="0" Background="{StaticResource TitleBarBrush}">
+                <TextBlock Text="Preparing virus databases" FontWeight="SemiBold"
+                           VerticalAlignment="Center" Margin="14,0,0,0"/>
+            </Grid>
+
+            <!-- Body: explanation, indeterminate progress, wait note -->
+            <StackPanel Grid.Row="1" Margin="22,18,22,18" VerticalAlignment="Center">
+                <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextBrush}"
+                           Text="The virus signature databases are being downloaded for the first time. This can take a few minutes depending on your connection."/>
+                <ProgressBar IsIndeterminate="True" Height="6" Margin="0,18,0,0"
+                             Foreground="{StaticResource AccentBrush}"
+                             Background="{StaticResource ControlBrush}"
+                             BorderThickness="0"/>
+                <TextBlock Margin="0,14,0,0" Foreground="{StaticResource MutedTextBrush}"
+                           TextWrapping="Wrap"
+                           Text="Please wait. This window closes automatically when the download is complete."/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

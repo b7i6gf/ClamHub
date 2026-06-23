@@ -38,6 +38,9 @@ public partial class ConsoleWindow : Window
     /// <summary>Opens the logs folder via the main window. Called from: the Open logs button.</summary>
     private void OpenLogs_Click(object sender, RoutedEventArgs e) => OpenLogsRequested?.Invoke();
 
+    /// <summary>Minimizes the window. Called from: the minimize button.</summary>
+    private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
     /// <summary>Closes the window. Called from: the close button.</summary>
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 }

@@ -65,9 +65,11 @@ public partial class MainWindow
         SetSound.IsChecked = s.SoundOnDetection;
         SetCountFiles.IsChecked = s.CountFilesOnDaemonScan;
         SetMultiScan.IsChecked = s.MultiScan;
+        SetAlwaysAdmin.IsChecked = s.AlwaysStartAsAdmin;
         SetDefaultAction.SelectedIndex = (int)s.DefaultAction;
         // Show a mask instead of the stored key, both on load and after saving.
         SetVtKey.Text = string.IsNullOrEmpty(s.VirusTotalApiKey) ? "" : VtKeyMask;
+        UpdateClamAvPathDisplay();
 
         RefreshContextMenuState();
         LoadConfEditors();
@@ -83,6 +85,7 @@ public partial class MainWindow
         SetSound.Click += (_, _) => AutoSaveGuiSettings();
         SetCountFiles.Click += (_, _) => AutoSaveGuiSettings();
         SetMultiScan.Click += (_, _) => AutoSaveGuiSettings();
+        SetAlwaysAdmin.Click += (_, _) => AutoSaveGuiSettings();
         SetDefaultAction.SelectionChanged += (_, _) => AutoSaveGuiSettings();
         SetVtKey.LostFocus += (_, _) => SaveVtKeyOnBlur();
 
@@ -327,6 +330,7 @@ public partial class MainWindow
             s.SoundOnDetection = SetSound.IsChecked == true;
             s.CountFilesOnDaemonScan = SetCountFiles.IsChecked == true;
             s.MultiScan = SetMultiScan.IsChecked == true;
+            s.AlwaysStartAsAdmin = SetAlwaysAdmin.IsChecked == true;
             s.DefaultAction = (InfectedFileAction)SetDefaultAction.SelectedIndex;
 
             // Only overwrite the stored key when the user actually typed a new
@@ -451,7 +455,7 @@ public partial class MainWindow
     /// always reset to the correct folders. Called from: XAML Click binding of the
     /// per-file "Rebuild config" buttons.
     /// </summary>
-    private void RebuildConfig_Click(object sender, RoutedEventArgs e)
+    private async void RebuildConfig_Click(object sender, RoutedEventArgs e)
     {
         var target = (sender as FrameworkElement)?.Tag as string == "freshclam"
             ? ConfigManager.ConfigTarget.FreshClam
@@ -474,13 +478,14 @@ public partial class MainWindow
         AppendSection("REBUILD CONFIG");
         AppendLine($"{name} rebuilt ({(transfer ? "settings kept" : "defaults")}). Restart the daemon to apply.");
         SetSettingsStatus($"{name} rebuilt. Restart the daemon to apply.", "OkBrush");
+        await ValidateConfigAndReportAsync();
     }
 
     /// <summary>
     /// Rebuilds both config files at once with the same transfer choice.
     /// Called from: XAML Click binding of the "Rebuild all configs" button.
     /// </summary>
-    private void RebuildAllConfigs_Click(object sender, RoutedEventArgs e)
+    private async void RebuildAllConfigs_Click(object sender, RoutedEventArgs e)
     {
         if (!AskRebuild("clamd.conf and freshclam.conf", out bool transfer)) return;
 
@@ -498,6 +503,7 @@ public partial class MainWindow
         AppendSection("REBUILD CONFIG");
         AppendLine($"clamd.conf and freshclam.conf rebuilt ({(transfer ? "settings kept" : "defaults")}). Restart the daemon to apply.");
         SetSettingsStatus("Configs rebuilt. Restart the daemon to apply.", "OkBrush");
+        await ValidateConfigAndReportAsync();
     }
 
     /// <summary>

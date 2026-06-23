@@ -26,8 +26,10 @@ public partial class MainWindow
     /// <summary>Rebinds the quarantine list. Called from: init and every action.</summary>
     private void BindQuarantine()
     {
-        QuarantineList.ItemsSource = null;
         QuarantineList.ItemsSource = QuarantineManager.Entries;
+        // Force the (sorted) default view to re-read the change-less list so every
+        // restore/delete refreshes the table immediately, including the first one.
+        System.Windows.Data.CollectionViewSource.GetDefaultView(QuarantineManager.Entries)?.Refresh();
         QuarantineStatus.Text = $"{QuarantineManager.Entries.Count} file(s) in quarantine.";
         ScheduleFill(QuarantineList, QuarantineGridView);
     }

@@ -86,6 +86,20 @@ public class AppSettings
     public string VirusTotalApiKey { get; set; } = "";
 
     /// <summary>
+    /// Folder where ClamAV is installed, when the user pointed the app at an
+    /// existing install (folder picker). Empty/null means use the default
+    /// BaseDir\ClamAV. Re-applied on startup via AppPaths.SetClamAvDir.
+    /// </summary>
+    public string? ClamAvPath { get; set; }
+
+    /// <summary>
+    /// When true, the app relaunches itself elevated on startup (UAC prompt) so it
+    /// always runs as administrator. If the prompt is declined it continues without
+    /// elevation. Applied in App.OnStartup.
+    /// </summary>
+    public bool AlwaysStartAsAdmin { get; set; }
+
+    /// <summary>
     /// Directories excluded from every scan. Applied to clamscan via
     /// --exclude-dir and to the daemon via a managed ExcludePath block in
     /// clamd.conf. Absolute paths.

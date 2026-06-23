@@ -81,6 +81,12 @@ public partial class AboutWindow : Window
     /// </summary>
     public bool UpdateRequested { get; private set; }
 
+    /// <summary>
+    /// Set to true when the user clicks "Check for updates"; the owner reads it
+    /// after ShowDialog and opens the GitHub update dialog.
+    /// </summary>
+    public bool CheckUpdatesRequested { get; private set; }
+
     /// <summary>Allows dragging the borderless dialog. Called from: window MouseLeftButtonDown.</summary>
     private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -94,6 +100,16 @@ public partial class AboutWindow : Window
     private void UpdateSignatures_Click(object sender, RoutedEventArgs e)
     {
         UpdateRequested = true;
+        DialogResult = true;
+    }
+
+    /// <summary>
+    /// Closes the dialog signalling that the GitHub update dialog should open, so
+    /// the owner can show it. Called from: the "Check for updates" button.
+    /// </summary>
+    private void CheckUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        CheckUpdatesRequested = true;
         DialogResult = true;
     }
 

@@ -92,8 +92,11 @@ public partial class MainWindow
     /// </summary>
     private void BindHistory()
     {
-        HistoryList.ItemsSource = null;
         HistoryList.ItemsSource = HistoryManager.Entries;
+        // The list raises no change notifications, so force the (sorted) default
+        // view to re-read it; this makes the table reflect every add/delete
+        // immediately, including the first one.
+        System.Windows.Data.CollectionViewSource.GetDefaultView(HistoryManager.Entries)?.Refresh();
         ScheduleFill(HistoryList, HistoryGridView);
     }
 

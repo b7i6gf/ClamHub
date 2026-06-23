@@ -110,8 +110,11 @@ public static class DaemonController
     {
         onStatus?.Invoke("Reloading the daemon with the updated signatures...");
 
-        // Phase 1: deliver the RELOAD command, retrying while connections are refused.
-        bool sent = false, announced = false;
+        // Phase 1: deliver the RELOAD command, retrying while connections are
+        // refused. The refusal is expected (clamd briefly drops the socket while it
+        // swaps databases) and self-resolves, so it is retried SILENTLY rather than
+        // shown as an error.
+        bool sent = false;
         for (int i = 1; i <= attempts && !sent; i++)
         {
             try
@@ -125,11 +128,6 @@ public static class DaemonController
             }
             catch
             {
-                if (!announced)
-                {
-                    onStatus?.Invoke("Daemon not reachable yet (connection refused), retrying...");
-                    announced = true;
-                }
                 if (i < attempts) await Task.Delay(delayMs);
             }
         }

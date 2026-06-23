@@ -557,7 +557,7 @@
                                 <GridView x:Name="HistoryGridView">
                                     <GridViewColumn Width="130">
                                         <GridViewColumn.Header>
-                                            <TextBlock Text="When" Tag="Timestamp"
+                                            <TextBlock Text="Time" Tag="Timestamp"
                                                        ToolTip="Date and time the scan was started."/>
                                         </GridViewColumn.Header>
                                         <GridViewColumn.CellTemplate>
@@ -659,6 +659,16 @@
                         <ScrollViewer Grid.Row="0" Grid.Column="0" VerticalScrollBarVisibility="Auto"
                                       Padding="0,0,4,0">
                         <StackPanel>
+                            <TextBlock Text="ClamAV folder" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                            <TextBlock x:Name="ClamAvPathText" TextWrapping="Wrap"
+                                       Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6"
+                                       Text="(resolving...)"/>
+                            <Button x:Name="ChangeClamAvFolderButton" Content="Change ClamAV folder..."
+                                    Height="30" HorizontalAlignment="Left" Margin="0,0,0,2"
+                                    Click="ChangeClamAvFolder_Click"
+                                    ToolTip="Select an existing ClamAV folder on this PC; its location is used and saved"/>
+                            <Border Height="1" Background="#FF3A3D46" Margin="0,12,0,12"/>
+
                             <TextBlock Text="GUI  (settings.json)" FontWeight="SemiBold" Margin="0,0,0,8"/>
                             <CheckBox x:Name="SetUseDaemon" Content="Prefer daemon for scans" Margin="0,7"/>
                             <CheckBox x:Name="SetAutoStart" Content="Start daemon with the GUI" Margin="0,7"/>
@@ -668,6 +678,8 @@
                                       Margin="0,7"
                                       ToolTip="Counts files in the target after a daemon scan; clamdscan does not report this. Runs in the background."/>
                             <CheckBox x:Name="SetMultiScan" Content="Multi-threaded scans by default" Margin="0,7"/>
+                            <CheckBox x:Name="SetAlwaysAdmin" Content="Always start as admin" Margin="0,7"
+                                      ToolTip="Relaunch elevated on startup (asks via UAC). If declined, starts normally."/>
                             <StackPanel Orientation="Horizontal" Margin="0,10,0,2">
                                 <TextBlock Text="Default action:" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                 <ComboBox x:Name="SetDefaultAction" Width="120" Height="26" SelectedIndex="0">
@@ -705,18 +717,39 @@
 
                             <Separator Margin="0,6,0,8" Background="#FF3A3D46"/>
                             <TextBlock Text="Maintenance" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                            <Button x:Name="UpdateButton" Content="Update signatures" Width="160" Height="30"
-                                    HorizontalAlignment="Left" Margin="0,0,0,8" Click="Update_Click"
-                                    ToolTip="Run freshclam to update the signature databases"/>
-                            <Button Content="Rebuild all configs" Width="160" Height="30"
-                                    HorizontalAlignment="Left" Margin="0,0,0,8" Click="RebuildAllConfigs_Click"
-                                    ToolTip="Rewrite clamd.conf and freshclam.conf with correct database and log paths (asks whether to keep your settings)"/>
-                            <Button x:Name="RestartButton" Content="Restart" Width="160" Height="30"
-                                    HorizontalAlignment="Left" Margin="0,0,0,8" Click="Restart_Click"
-                                    ToolTip="Relaunch ClamHub"/>
-                            <Button x:Name="AdminRestartButton" Content="Restart as admin" Width="160" Height="30"
-                                    HorizontalAlignment="Left" Click="RestartAsAdmin_Click"
-                                    ToolTip="Needed for memory scans of system processes and protected folders"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <Button Grid.Row="0" Grid.Column="0" Content="Check for updates" Height="30"
+                                        Margin="0,0,4,8" Click="CheckUpdates_Click"
+                                        ToolTip="Check GitHub for the latest ClamHub and ClamAV releases, and download/set up ClamAV"/>
+                                <Button Grid.Row="0" Grid.Column="1" x:Name="UpdateButton" Content="Update signatures"
+                                        Height="30" Margin="4,0,0,8" Click="Update_Click"
+                                        ToolTip="Run freshclam to update the signature databases"/>
+
+                                <Button Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Content="Rebuild all configs"
+                                        Height="30" Margin="0,0,0,8" Click="RebuildAllConfigs_Click"
+                                        ToolTip="Rewrite clamd.conf and freshclam.conf with correct database and log paths (asks whether to keep your settings)"/>
+
+                                <Button Grid.Row="2" Grid.Column="0" Content="Run diagnostics" Height="30"
+                                        Margin="0,0,4,8" Click="RunDiagnostics_Click"
+                                        ToolTip="Run clamconf to show engine, build, database and config diagnostics in the console"/>
+                                <Button Grid.Row="2" Grid.Column="1" x:Name="RestartButton" Content="Restart" Height="30"
+                                        Margin="4,0,0,8" Click="Restart_Click" ToolTip="Relaunch ClamHub"/>
+
+                                <Button Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AdminRestartButton"
+                                        Content="Restart as admin" Height="30" Click="RestartAsAdmin_Click"
+                                        ToolTip="Needed for memory scans of system processes and protected folders"/>
+                            </Grid>
                         </StackPanel>
                         </ScrollViewer>
 

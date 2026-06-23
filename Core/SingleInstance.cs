@@ -34,6 +34,18 @@ public static class SingleInstance
     }
 
     /// <summary>
+    /// Releases the single-instance mutex so a copy relaunched moments later (a
+    /// restart) can claim primary instead of seeing this still-exiting process and
+    /// quitting itself. Called from: MainWindow restart handlers before relaunch.
+    /// </summary>
+    public static void ReleasePrimary()
+    {
+        try { _mutex?.Dispose(); }
+        catch { /* nothing useful to do if it is already gone */ }
+        _mutex = null;
+    }
+
+    /// <summary>
     /// Sends a message (a path or ActivateMessage) to the running instance.
     /// Best effort with a short timeout. Called from: App.OnStartup when not primary.
     /// </summary>

@@ -14,6 +14,26 @@ public static class UpdateManager
     public static bool UpdateInProgress { get; private set; }
 
     /// <summary>
+    /// True if at least one signature database (*.cvd/*.cld) is already present.
+    /// Used to tell an initial database creation (first download) from a routine
+    /// signature update. Called from: MainWindow before running an update.
+    /// </summary>
+    public static bool DatabasesPresent()
+    {
+        try
+        {
+            var dir = AppPaths.DatabaseDir;
+            if (!Directory.Exists(dir)) return false;
+            return Directory.EnumerateFiles(dir, "*.cvd").Any()
+                || Directory.EnumerateFiles(dir, "*.cld").Any();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Runs freshclam with the portable config and streams its output.
     /// freshclam.conf contains NotifyClamd, so a running daemon reloads the
     /// new signatures automatically after the update.
