@@ -4,7 +4,7 @@
   <img src="Docs/ClamHub.png" alt="ClamHub" width="400"/>
 </p>
 
-An open-source application for using [ClamAV](https://www.clamav.net) with a GUI on Windows. Just drop the EXE next to your ClamAV folder and go - no installation, no system changes, everything in one place.
+An open-source application for using [ClamAV](https://www.clamav.net) with a GUI on Windows. Just run the EXE and go - portable, always up-to-date, 
 
 ---
 
@@ -87,19 +87,23 @@ You can also:
 - Enter your VirusTotal API key to enable the VirusTotal funktion in Check Hash and Quarantine
 - Open the `clamd.conf` and `freshclam.conf` directly if you need to
 
+### Update Checker
+<p align="center">
+<img src="Docs/Update.png" alt="ClamHub" width="700"/>
+</p>
 ---
+
+- Keeping the app up-to-date is simple. You can update the app via the "Check for updates" button in the Settings tab or by navigating to the "About" window in the top right corner of the app.
+- ClamHub will show you the newest updates there. Press download and wait.
+
 
 ## Getting started
 
 1. Place `ClamHub.exe` in any folder
-2. Create a `ClamAV` subfolder and copy the portable ClamAV binaries into it
-        ClamAV portable builds can be downloaded from [clamav.net](https://www.clamav.net/downloads)
-        Download the newes clamav-x.x.x.win.x64.zip, extract the contents into the ClamAV subfolder
-<img width="145" height="60" alt="{73D03AF1-4EE5-4F03-A196-603963AA0ECF}" src="https://github.com/user-attachments/assets/e54a20aa-c1e8-47cd-bba0-506596ffb802" />
-
-3. Launch the EXE - configs and folders are created automatically on first run
-4. Wait for the automatic download of the virus database
-5. Have fun hunting for viruses :)
+2. Run the .exe and select one of the following options.
+  a) automatic download: The official ClamAV build is automatically being downloaded and extracted next to the ClamHub.exe. Fully automatic and no further clicks needed.
+  b) manually select ClamAV: It does what it says. Search for your own ClamAV installation and select the folder. It automatically detects all databases and executables within. ClamAV can be downloaded at [clamav.net](https://www.clamav.net/downloads)
+3. Have fun hunting for viruses :)
 
 
 ## Update the app
