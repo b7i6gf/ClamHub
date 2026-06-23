@@ -1,5 +1,3 @@
-<img width="673" height="397" alt="image" src="https://github.com/user-attachments/assets/22c8823d-802a-4ea7-bb19-7caeb9d0be07" /># ClamHub
-
 <p align="center">
   <img src="Docs/ClamHub.png" alt="ClamHub" width="400"/>
 </p>
@@ -95,16 +93,15 @@ You can also:
 - and many more...
 
 ### Update Checker
+
 <p align="center">
-<img src="Docs/Update.png" alt="ClamHub" width="700"/>
+<img src="Docs/Update.png" alt="ClamHub" width="500"/>
 </p>
----
 
 - Keeping the app up-to-date is simple. You can update the app via the "Check for updates" button in the Settings tab or by navigating to the "About" window in the top right corner of the app.
 <p align="center">
-<img src="Docs/About.png" alt="ClamHub" width="700"/>
+<img src="Docs/About.png" alt="ClamHub" width="400"/>
 </p>
-
 - ClamHub will show you the newest updates there. Press download and wait.
 
 
@@ -113,7 +110,7 @@ You can also:
 1. Place `ClamHub.exe` in any folder
 2. Run the .exe and select one of the following options.
 <p align="center">
-<img src="Docs/Startup.png" alt="ClamHub" width="700"/>
+<img src="Docs/Startup.png" alt="ClamHub" width="500"/>
 </p>
 
   - a) Download automatically: The official ClamAV build is automatically being downloaded and extracted next to the ClamHub.exe. Fully automatic and no further clicks needed.
