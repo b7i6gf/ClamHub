@@ -43,16 +43,28 @@
 
                 <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,12"
                            Foreground="{StaticResource MutedTextBrush}"
-                           Text="Add the files and folders to scan. Close to keep them queued, or Scan all to run them now. Save the current list as a named queue to reuse it later. You can also drop files or folders into the list."/>
+                           Text="Add the files and folders to scan. Close to keep them queued, or Start scan to run them now. Save the current list as a named queue to reuse it later. You can also drop files or folders into the list."/>
 
                 <WrapPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
                     <TextBlock Text="Saved queues:" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                    <ComboBox x:Name="QueueProfileCombo" Width="150" Height="28" Margin="0,0,6,4"/>
+                    <ComboBox x:Name="QueueProfileCombo" Width="150" Height="28" Margin="0,0,6,4"
+                              SelectionChanged="QueueProfileCombo_SelectionChanged"/>
                     <Button Content="Load" Height="28" Width="58" Margin="0,0,6,4" Click="LoadQueueProfile_Click"/>
                     <Button Content="Delete" Height="28" Width="62" Margin="0,0,16,4" Click="DeleteQueueProfile_Click"/>
-                    <TextBox x:Name="QueueProfileNameBox" Width="130" Height="28" Margin="0,0,6,4"
-                             VerticalContentAlignment="Center"
-                             ToolTip="Name to save the current queue under"/>
+                    <Grid Width="130" Margin="0,0,6,4">
+                        <TextBox x:Name="QueueProfileNameBox" Height="28" MaxLength="16"
+                                 VerticalContentAlignment="Center"
+                                 ToolTip="Name to save the current queue under"/>
+                        <TextBlock Style="{StaticResource PlaceholderText}" Text="new queue name">
+                            <TextBlock.Visibility>
+                                <Binding ElementName="QueueProfileNameBox" Path="Text.IsEmpty">
+                                    <Binding.Converter>
+                                        <BooleanToVisibilityConverter/>
+                                    </Binding.Converter>
+                                </Binding>
+                            </TextBlock.Visibility>
+                        </TextBlock>
+                    </Grid>
                     <Button Content="Save queue" Height="28" Width="92" Margin="0,0,0,4" Click="SaveQueueProfile_Click"/>
                 </WrapPanel>
 
@@ -87,7 +99,7 @@
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                     <Button Content="Close" Width="90" Height="32" Margin="0,0,10,0"
                             Click="Close_Click"/>
-                    <Button x:Name="ScanAllButton" Content="Scan all" Width="110" Height="32"
+                    <Button x:Name="ScanAllButton" Content="Start scan" Width="110" Height="32"
                             FontWeight="SemiBold" Click="ScanAll_Click"/>
                 </StackPanel>
             </Grid>

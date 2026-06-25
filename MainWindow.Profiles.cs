@@ -43,9 +43,10 @@ public partial class MainWindow
         ProfileCombo.Items.Add(NoProfile);
         foreach (var profile in ProfileManager.Profiles)
             ProfileCombo.Items.Add(profile.Name);
-        _profileComboUpdating = false;
-
+        // Selecting inside the guard: a programmatic "(-)" must not clear the tab,
+        // only a user choosing "(-)" from the dropdown does (see SelectionChanged).
         ProfileCombo.SelectedItem = selectName ?? NoProfile;
+        _profileComboUpdating = false;
     }
 
     /// <summary>
@@ -54,7 +55,13 @@ public partial class MainWindow
     /// </summary>
     private void ProfileCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_profileComboUpdating || ProfileCombo.SelectedItem is not string name || name == NoProfile) return;
+        if (_profileComboUpdating || ProfileCombo.SelectedItem is not string name) return;
+        if (name == NoProfile)
+        {
+            // User chose "(-)": reset the whole scan tab to a clean state.
+            ClearScanTab();
+            return;
+        }
         var profile = ProfileManager.Profiles.FirstOrDefault(p => p.Name == name);
         if (profile == null) return;
 
@@ -74,6 +81,31 @@ public partial class MainWindow
         UpdateQueueIndicator();
 
         AppendLine($"Profile applied: {profile.Name}");
+    }
+
+    /// <summary>
+    /// Clears every scan-tab input back to defaults: target, action, extensions,
+    /// the queue and the session exclusions. Called from: selecting "(-)" and
+    /// SelectNoProfile (after a profile scan).
+    /// </summary>
+    private void ClearScanTab()
+    {
+        TargetBox.Clear();
+        ActionCombo.SelectedIndex = (int)SettingsManager.Current.DefaultAction;
+        ExtensionsBox.Clear();
+        _queue.Clear();
+        UpdateQueueIndicator();
+        ResetSessionExclusions();
+    }
+
+    /// <summary>
+    /// Selects the "(-)" entry (which clears the scan tab). Called from: Scan_Click
+    /// and ScanQueue_Click after a scan that used a profile.
+    /// </summary>
+    private void SelectNoProfile()
+    {
+        if (ProfileCombo.SelectedItem as string != NoProfile)
+            ProfileCombo.SelectedItem = NoProfile;
     }
 
     /// <summary>

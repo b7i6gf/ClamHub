@@ -398,7 +398,11 @@ public partial class MainWindow : Window
         UpdateQueueIndicator();
 
         if (window.ScanRequested && _queue.Count > 0)
+        {
+            bool hadProfile = ActiveProfileName != null;
             await RunQueueScan(_queue.ToList());
+            if (hadProfile) SelectNoProfile();
+        }
     }
 
     /// <summary>
@@ -451,24 +455,30 @@ public partial class MainWindow : Window
     /// </summary>
     private async void Scan_Click(object sender, RoutedEventArgs e)
     {
+        bool hadProfile = ActiveProfileName != null;
+
         if (_queue.Count > 0)
         {
             await RunQueueScan(_queue.ToList());
-            return;
+        }
+        else
+        {
+            var options = new ScanEngine.ScanOptions(
+                ScanEngine.ScanMode.Path,
+                TargetBox.Text,
+                (InfectedFileAction)ActionCombo.SelectedIndex,
+                SettingsManager.Current.MultiScan,
+                ScanEngine.ParseExtensions(ExtensionsBox.Text),
+                false,
+                _sessionExcludeDirs,
+                _sessionExcludeExts,
+                _sessionExcludeFiles);
+
+            await RunScanGuarded(options);
         }
 
-        var options = new ScanEngine.ScanOptions(
-            ScanEngine.ScanMode.Path,
-            TargetBox.Text,
-            (InfectedFileAction)ActionCombo.SelectedIndex,
-            SettingsManager.Current.MultiScan,
-            ScanEngine.ParseExtensions(ExtensionsBox.Text),
-            false,
-            _sessionExcludeDirs,
-            _sessionExcludeExts,
-            _sessionExcludeFiles);
-
-        await RunScanGuarded(options);
+        // After a profile scan, drop back to "(-)" which clears the scan tab.
+        if (hadProfile) SelectNoProfile();
     }
 
     /// <summary>

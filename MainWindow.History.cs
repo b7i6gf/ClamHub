@@ -314,6 +314,21 @@ public partial class MainWindow
                     sb.AppendLine(line);
         }
 
+        // For an only-extensions queue scan, list the covered files per target.
+        if (extensions is { Count: > 0 })
+        {
+            const int perTargetCap = 500;
+            sb.AppendLine();
+            sb.AppendLine("Scanned objects (only-extensions scan):");
+            foreach (var (t, _) in results)
+            {
+                var matched = MatchedFiles(t, extensions);
+                sb.AppendLine($"  {t} ({matched.Count}):");
+                foreach (var f in matched.Take(perTargetCap)) sb.AppendLine($"    {f}");
+                if (matched.Count > perTargetCap) sb.AppendLine($"    ...and {matched.Count - perTargetCap} more");
+            }
+        }
+
         AddHistory("Queue scan", $"{results.Count} target(s)", process, resultLabel, sb.ToString());
     }
 

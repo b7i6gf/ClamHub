@@ -109,15 +109,43 @@ public partial class ScanQueueWindow : Window
         foreach (var p in (string[])e.Data.GetData(DataFormats.FileDrop)) AddTarget(p);
     }
 
-    /// <summary>Reloads the saved-queue combo from QueueProfileManager. Called from: ctor and save/delete.</summary>
+    /// <summary>Combo entry shown when no saved queue is selected.</summary>
+    private const string NoQueueProfile = "(-)";
+
+    /// <summary>Suppresses SelectionChanged side effects while the combo is rebuilt.</summary>
+    private bool _queueComboUpdating;
+
+    /// <summary>Selected real queue name, or null when "(-)" (none) is selected.</summary>
+    private string? ActiveQueueProfile =>
+        QueueProfileCombo.SelectedItem is string s && s != NoQueueProfile ? s : null;
+
+    /// <summary>Reloads the saved-queue combo (with a leading "(-)"). Called from: ctor and save/delete.</summary>
     private void RefreshQueueProfileCombo()
     {
-        string? selected = QueueProfileCombo.SelectedItem as string;
+        string? selected = ActiveQueueProfile;
+        _queueComboUpdating = true;
         QueueProfileCombo.Items.Clear();
+        QueueProfileCombo.Items.Add(NoQueueProfile);
         foreach (var p in QueueProfileManager.Profiles)
             QueueProfileCombo.Items.Add(p.Name);
-        if (selected != null && QueueProfileCombo.Items.Contains(selected))
-            QueueProfileCombo.SelectedItem = selected;
+        QueueProfileCombo.SelectedItem =
+            selected != null && QueueProfileCombo.Items.Contains(selected) ? selected : NoQueueProfile;
+        _queueComboUpdating = false;
+    }
+
+    /// <summary>
+    /// Selecting "(-)" empties the current queue; selecting a real entry does
+    /// nothing until Load is pressed. Called from: combo SelectionChanged.
+    /// </summary>
+    private void QueueProfileCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_queueComboUpdating) return;
+        if (QueueProfileCombo.SelectedItem is string s && s == NoQueueProfile)
+        {
+            TargetList.Items.Clear();
+            UpdateStatus();
+            StatusText.Text = "Queue cleared.";
+        }
     }
 
     /// <summary>
@@ -127,7 +155,7 @@ public partial class ScanQueueWindow : Window
     private void SaveQueueProfile_Click(object sender, RoutedEventArgs e)
     {
         string name = QueueProfileNameBox.Text.Trim();
-        if (name.Length == 0) name = QueueProfileCombo.SelectedItem as string ?? "";
+        if (name.Length == 0) name = ActiveQueueProfile ?? "";
         if (name.Length == 0)
         {
             StatusText.Text = "Enter a name to save the queue under.";
@@ -155,7 +183,7 @@ public partial class ScanQueueWindow : Window
     /// </summary>
     private void LoadQueueProfile_Click(object sender, RoutedEventArgs e)
     {
-        if (QueueProfileCombo.SelectedItem is not string name)
+        if (ActiveQueueProfile is not string name)
         {
             StatusText.Text = "Select a saved queue to load.";
             return;
@@ -181,7 +209,7 @@ public partial class ScanQueueWindow : Window
     /// <summary>Deletes the selected saved queue. Called from: Delete button.</summary>
     private void DeleteQueueProfile_Click(object sender, RoutedEventArgs e)
     {
-        if (QueueProfileCombo.SelectedItem is not string name)
+        if (ActiveQueueProfile is not string name)
         {
             StatusText.Text = "Select a saved queue to delete.";
             return;

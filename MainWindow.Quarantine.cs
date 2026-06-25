@@ -113,7 +113,7 @@ public partial class MainWindow
             BindQuarantine();
             AppendSection("QUARANTINE");
             AppendLine($"{en.OriginalName} {verb} to {en.OriginalPath}");
-            AddHistory("Quarantine action", en.OriginalPath, "", "restored",
+            AddHistory("Quarantine action", en.OriginalPath, "", "Restored",
                 $"Restored from quarantine.{Environment.NewLine}" +
                 $"File: {en.OriginalName}{Environment.NewLine}" +
                 $"To: {en.OriginalPath}" +
@@ -143,7 +143,7 @@ public partial class MainWindow
             BindQuarantine();
             AppendSection("QUARANTINE");
             AppendLine($"{entry.OriginalName} permanently deleted.");
-            AddHistory("Quarantine action", entry.OriginalPath, "", "removed",
+            AddHistory("Quarantine action", entry.OriginalPath, "", "Removed",
                 $"Permanently removed from quarantine.{Environment.NewLine}" +
                 $"File: {entry.OriginalName}{Environment.NewLine}" +
                 $"Original path: {entry.OriginalPath}");

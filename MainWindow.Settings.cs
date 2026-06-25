@@ -88,6 +88,16 @@ public partial class MainWindow
         SetAlwaysAdmin.Click += (_, _) => AutoSaveGuiSettings();
         SetDefaultAction.SelectionChanged += (_, _) => AutoSaveGuiSettings();
         SetVtKey.LostFocus += (_, _) => SaveVtKeyOnBlur();
+        SetVtKey.KeyDown += (_, e) =>
+        {
+            // Enter applies the typed key and masks it, like leaving the field does.
+            if (e.Key == System.Windows.Input.Key.Enter)
+            {
+                SaveVtKeyOnBlur();
+                System.Windows.Input.Keyboard.ClearFocus();
+                e.Handled = true;
+            }
+        };
 
         _settingsLoading = false;
         SetSettingsStatus("", null);
