@@ -26,6 +26,7 @@ ClamHub puts a clean, dark UI on top of ClamAV so you do not have to deal with t
 - **Profiles** - save your regular scans in profiles for repeatable workflows
 
 ---
+---
 
 ## Usage
 
@@ -98,6 +99,8 @@ You can also:
 - Open the `clamd.conf` and `freshclam.conf` directly if you need to
 - and many more...
 
+---
+
 ### Update Checker
 
 <p align="center">
@@ -108,8 +111,10 @@ You can also:
 <p align="center">
 <img src="Docs/About.png" alt="ClamHub" width="400"/>
 </p>
-- ClamHub will show you the newest updates there. Press download and wait.
+- ClamHub will show you the newest updates there. Press the download button and wait.
 
+---
+---
 
 ## Getting started
 
