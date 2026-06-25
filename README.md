@@ -29,19 +29,21 @@ ClamHub puts a clean, dark UI on top of ClamAV so you do not have to deal with t
 
 ## Usage
 
-### Scan tab
+### Scan
 <p align="center">
 <img src="Docs/Scan.png" alt="ClamHub" width="700"/>
 </p>
 - Pick or Drag and Drop a file, folder or entire drive and hit 'Start Scan'. The app prefers the ClamAV daemon (`clamdscan`) for parallel multi-core scanning and falls back to `clamscan` automatically if the daemon is not running.
-- You can filter by file extension (e.g. `exe dll sys`) or even exclude Paths systemwide or for a particular scan to skip irrelevant files. You can also query multiple files and folders at once so scanning becomes more efficient!
+- You can filter by file extension (e.g. `exe dll sys`) or even exclude paths systemwide or for a particular scan to skip irrelevant files. You can also query multiple files and folders at once so scanning becomes more efficient!
 - Run a **memory scan** to check running processes and kill them instantly.
 Infected files can be reported only, moved to quarantine, or deleted - your choice per scan.
+- Use VirusTotal as a secondary scan for single files. (sends only the hash of the file to VirusTotal for a report) 
+- Create profiles for your custom scans. You can even save queues for reoccuring tasks
 - Scans can be cancelled at any point.
 
 ---
 
-### Hash Checker tab
+### Hash Verifier
 <p align="center">
 <img src="Docs/Hash Verifier.png" alt="ClamHub" width="700"/>
 </p>
@@ -51,7 +53,7 @@ Infected files can be reported only, moved to quarantine, or deleted - your choi
 
 ---
 
-### Quarantine tab
+### Quarantine
 <p align="center">
 <img src="Docs/Quarantine.png" alt="ClamHub" width="700"/>
 </p>
@@ -63,19 +65,20 @@ Shows every file ClamHub has quarantined, with the original path, date and file 
   
 ---
 
-### History tab
+### History
 <p align="center">
 <img src="Docs/History.png" alt="ClamHub" width="700"/>
 </p>
 
 - Every completed scan is saved automatically. The history table shows when it ran, what was scanned, which scanner was used, how long it took and how many infected files were found.
-- Click any entry to see the full list of detections for that scan.
+- History will also show actions you made in Quarantine or Hash Verifier
+- Click any entry to see the full report of the scan or action.
 - You can clear the history or open the raw JSON file directly.
 - Deletion of entries or the whole history is supported as well.
 
 ---
 
-### Settings tab
+### Settings
 <p align="center">
 <img src="Docs/Settings.png" alt="ClamHub" width="700"/>
 </p>
@@ -87,7 +90,7 @@ You can also:
 - Add or remove path and extension exclusions under Daemon > File system > Exclude Path
 - Enable the Windows Explorer context menu entry ("Scan with ClamHub") for all files
 - Enter your VirusTotal API key to enable the VirusTotal feature in Scan, Hash Verifier and Quarantine
-- Run diagnostics with the built-in clamconf.exe.
+- Run diagnostics with ClamAVs built-in clamconf.exe.
 - Always start in administrator mode.
 - Open the `clamd.conf` and `freshclam.conf` directly if you need to
 - and many more...
@@ -132,4 +135,8 @@ publish.cmd         # portable single-file release into .\publish
 
 - Moving the app folder invalidates the Explorer context menu entry - just toggle it off and back on in Settings
 - `clamdscan` produces a shorter native summary than `clamscan`; ClamHub adds its own summary block with engine, target, duration and result after every daemon scan
-  
+
+## Future
+
+- ClamHub is in active development. Expect multiple updates over the first few months! One feature that's currently missing is the sigtool.exe form ClamAV I really want to look into a bit more before I implement it into ClamHub.
+- 
