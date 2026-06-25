@@ -2,7 +2,7 @@
   <img src="Docs/ClamHub.png" alt="ClamHub" width="400"/>
 </p>
 
-An open-source application for using [ClamAV](https://www.clamav.net) with a GUI on Windows. Just run the EXE and go - portable, always up-to-date, 
+An open-source application for using [ClamAV](https://www.clamav.net) with a GUI on Windows. Just run the EXE and go - free, portable, extensive features and always up-to-date.
 
 ---
 
