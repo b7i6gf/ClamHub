@@ -33,6 +33,7 @@ ClamHub puts a clean, dark UI on top of ClamAV so you do not have to deal with t
 <p align="center">
 <img src="Docs/Scan.png" alt="ClamHub" width="700"/>
 </p>
+
 - Pick or Drag and Drop a file, folder or entire drive and hit 'Start Scan'. The app prefers the ClamAV daemon (`clamdscan`) for parallel multi-core scanning and falls back to `clamscan` automatically if the daemon is not running.
 - You can filter by file extension (e.g. `exe dll sys`) or even exclude paths systemwide or for a particular scan to skip irrelevant files. You can also query multiple files and folders at once so scanning becomes more efficient!
 - Run a **memory scan** to check running processes and kill them instantly.
@@ -47,6 +48,7 @@ Infected files can be reported only, moved to quarantine, or deleted - your choi
 <p align="center">
 <img src="Docs/Hash Verifier.png" alt="ClamHub" width="700"/>
 </p>
+
 - Drop or browse to any file and compute its hash. Supports SHA-1, SHA-256, SHA-384, SHA-512 and MD5 - individually or all at once.
 - Paste an expected hash to get an instant match / mismatch result
 - If you have a VirusTotal API key set up (in Settings), you can look up the file's SHA-256 directly from this tab. Only the hash is sent - the file never leaves your machine
@@ -57,6 +59,7 @@ Infected files can be reported only, moved to quarantine, or deleted - your choi
 <p align="center">
 <img src="Docs/Quarantine.png" alt="ClamHub" width="700"/>
 </p>
+
 Shows every file ClamHub has quarantined, with the original path, date and file name. From here you can:
 
 - **Restore** a file back to exactly where it came from
