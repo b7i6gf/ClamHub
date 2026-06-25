@@ -19,8 +19,8 @@ ClamHub puts a clean, dark UI on top of ClamAV so you do not have to deal with t
 ## Highlights
 
 - **Portable** - the entire setup lives in one folder, move it wherever you want
-- **Fast** - Highly responsive UI with no hickups or bugs (I am still testing everything)
-- **Modern dark UI** - custom title bar, clean tab layout, no clutter
+- **Extensive** - Feature-rich application, with full control over scans, infected files and configs
+- **Modern dark UI** - consistent design, clean layout, pleasant for the eye
 - **Smart console layout** - dock the output below, to the right, or pop it into a separate window. On the Settings tab the console hides automatically so the config editors get the full space
 - **No surprises** - configs are generated once on startup and are highly customizable within the settings tab
 - **Profiles** - save your regular scans in profiles for repeatable workflows
