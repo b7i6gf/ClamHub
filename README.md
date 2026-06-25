@@ -116,7 +116,7 @@ You can also:
 1. Place `ClamHub.exe` in any folder
 2. Run the .exe and select one of the following options.
 <p align="center">
-<img src="Docs/Startup.png" alt="ClamHub" width="500"/>
+<img src="Docs/Startup.png" alt="ClamHub" width="450"/>
 </p>
 
   - a) Download automatically: The official ClamAV build is automatically being downloaded and extracted next to the ClamHub.exe. Fully automatic and no further clicks needed.
