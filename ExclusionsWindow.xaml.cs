@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -9,26 +10,53 @@ using Microsoft.Win32;
 namespace ClamHub;
 
 /// <summary>
-/// Generic editor for a list of directories and a list of file extensions.
-/// It does not persist anything itself: the caller passes the initial lists and
-/// reads ResultDirectories / ResultExtensions after a successful save, then
-/// decides where to store them (persistent settings vs temporary scan session).
-/// Opened from the Settings page (defaults) and the Scan tab (session).
+/// Generic editor for excluded directories, individual files and file
+/// extensions. It does not persist anything itself: the caller passes the
+/// initial lists and reads ResultDirectories / ResultFiles / ResultExtensions
+/// after a successful save, then decides where to store them (persistent
+/// settings vs temporary scan session). Files and folders can also be dropped
+/// onto the window. Opened from the Settings page (defaults) and the Scan tab
+/// (session).
 /// </summary>
 public partial class ExclusionsWindow : Window
 {
     /// <summary>Edited directory list, valid only when DialogResult is true.</summary>
     public List<string> ResultDirectories { get; private set; } = new();
 
+    /// <summary>Edited single-file list, valid only when DialogResult is true.</summary>
+    public List<string> ResultFiles { get; private set; } = new();
+
     /// <summary>Edited extension list, valid only when DialogResult is true.</summary>
     public List<string> ResultExtensions { get; private set; } = new();
 
-    public ExclusionsWindow(IEnumerable<string> dirs, IEnumerable<string> exts, string subtitle)
+    public ExclusionsWindow(IEnumerable<string> dirs, IEnumerable<string> files,
+                            IEnumerable<string> exts, string subtitle)
     {
         InitializeComponent();
         SubtitleText.Text = subtitle;
         foreach (var d in dirs) DirList.Items.Add(d);
+        foreach (var f in files) FileList.Items.Add(f);
         foreach (var e in exts) ExtList.Items.Add(e);
+    }
+
+    /// <summary>Adds a directory to the list if new. Called from: AddFolder_Click and drop.</summary>
+    private void AddDirToList(string raw)
+    {
+        var path = raw.TrimEnd('\\').Trim();
+        if (path.Length == 0) return;
+        if (DirList.Items.Cast<string>().Any(x => x.Equals(path, StringComparison.OrdinalIgnoreCase)))
+            return;
+        DirList.Items.Add(path);
+    }
+
+    /// <summary>Adds a file to the list if new. Called from: AddFile_Click and drop.</summary>
+    private void AddFileToList(string raw)
+    {
+        var path = raw.Trim();
+        if (path.Length == 0) return;
+        if (FileList.Items.Cast<string>().Any(x => x.Equals(path, StringComparison.OrdinalIgnoreCase)))
+            return;
+        FileList.Items.Add(path);
     }
 
     /// <summary>Adds a folder via the system folder picker. Called from: Add folder button.</summary>
@@ -36,17 +64,48 @@ public partial class ExclusionsWindow : Window
     {
         var dialog = new OpenFolderDialog { Title = "Select a folder to exclude" };
         if (dialog.ShowDialog(this) != true) return;
-
-        var path = dialog.FolderName.TrimEnd('\\');
-        if (DirList.Items.Cast<string>().Any(x => x.Equals(path, StringComparison.OrdinalIgnoreCase)))
-            return;
-        DirList.Items.Add(path);
+        AddDirToList(dialog.FolderName);
     }
 
     /// <summary>Removes the selected directory. Called from: Remove selected button.</summary>
     private void RemoveDir_Click(object sender, RoutedEventArgs e)
     {
         if (DirList.SelectedItem != null) DirList.Items.Remove(DirList.SelectedItem);
+    }
+
+    /// <summary>Adds files via the system picker. Called from: Add file button.</summary>
+    private void AddFile_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog { Title = "Select file(s) to exclude", Multiselect = true };
+        if (dialog.ShowDialog(this) != true) return;
+        foreach (var f in dialog.FileNames) AddFileToList(f);
+    }
+
+    /// <summary>Removes the selected file. Called from: Remove selected button.</summary>
+    private void RemoveFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (FileList.SelectedItem != null) FileList.Items.Remove(FileList.SelectedItem);
+    }
+
+    /// <summary>Shows a copy cursor for file drops. Called from: content PreviewDragOver.</summary>
+    private void Content_DragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop)
+            ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    /// <summary>Routes dropped folders to the directory list and files to the file list. Called from: content Drop.</summary>
+    private void Content_Drop(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+        int dirs = 0, files = 0;
+        foreach (var p in (string[])e.Data.GetData(DataFormats.FileDrop))
+        {
+            if (Directory.Exists(p)) { AddDirToList(p); dirs++; }
+            else if (File.Exists(p)) { AddFileToList(p); files++; }
+        }
+        StatusText.Text = $"Added {dirs} folder(s) and {files} file(s) from the drop.";
     }
 
     /// <summary>Adds the typed extension on Enter. Called from: extension textbox KeyDown.</summary>
@@ -84,12 +143,13 @@ public partial class ExclusionsWindow : Window
     }
 
     /// <summary>
-    /// Captures both lists into the result properties and closes positively.
+    /// Captures all three lists into the result properties and closes positively.
     /// Persistence is left to the caller. Called from: Save button.
     /// </summary>
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         ResultDirectories = DirList.Items.Cast<string>().ToList();
+        ResultFiles = FileList.Items.Cast<string>().ToList();
         ResultExtensions = ExtList.Items.Cast<string>().ToList();
         DialogResult = true;
         Close();

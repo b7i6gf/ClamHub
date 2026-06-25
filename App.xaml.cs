@@ -31,6 +31,10 @@ public partial class App : Application
     {
         ParseArguments(e.Args);
 
+        // Remove a leftover "<name>.old.exe" from a previous self-upgrade, in the
+        // background so it never blocks startup (no-op when there is none).
+        _ = Task.Run(SelfUpdater.CleanupOldExe);
+
         // Settings drive the elevation choice, so load them first.
         SettingsManager.Load();
 

@@ -77,6 +77,7 @@ public static class ClamAvInstaller
 
             Directory.CreateDirectory(AppPaths.ClamAvDir);
             onOutput("Extracting ClamAV...");
+            onProgress(-1, null); // switch the bar to the animated/indeterminate look
             int extracted = 0;
             using (var archive = ZipFile.OpenRead(tempZip))
             {
@@ -108,7 +109,13 @@ public static class ClamAvInstaller
                         continue;
                     }
                     Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                    entry.ExtractToFile(target, overwrite: true);
+
+                    // Buffered copy (1 MB) rather than ExtractToFile's smaller default,
+                    // and cancellable mid-file.
+                    await using (var es = entry.Open())
+                    await using (var fs = new FileStream(target, FileMode.Create, FileAccess.Write,
+                                     FileShare.None, 1 << 20, FileOptions.SequentialScan))
+                        await es.CopyToAsync(fs, 1 << 20, cancel);
                     extracted++;
                 }
             }

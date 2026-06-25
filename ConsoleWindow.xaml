@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        Title="ClamHub Output" Height="500" Width="640"
+        Title="ClamHub Output" Height="500" Width="960"
         MinHeight="220" MinWidth="360"
         WindowStartupLocation="Manual" WindowStyle="None" ResizeMode="CanResize"
         Background="{StaticResource BgBrush}">
@@ -52,6 +52,7 @@
 
             <!-- Console output -->
             <RichTextBox Grid.Row="1" x:Name="ConsoleBox" IsReadOnly="True" IsDocumentEnabled="True"
+                         IsUndoEnabled="False"
                          Background="#FF17181C" Foreground="#FFD6D6D6" BorderThickness="0"
                          FontFamily="Consolas" FontSize="12" Padding="8"
                          VerticalScrollBarVisibility="Auto"

@@ -26,7 +26,8 @@ public static class ScanEngine
         IReadOnlyList<string>? IncludeExtensions,
         bool StopInfectedProcesses,
         IReadOnlyList<string>? ExcludeDirectories = null,
-        IReadOnlyList<string>? ExcludeExtensions = null);
+        IReadOnlyList<string>? ExcludeExtensions = null,
+        IReadOnlyList<string>? ExcludeFiles = null);
 
     /// <summary>Outcome of a scan. InfectedLines holds the raw FOUND lines.</summary>
     public record ScanResult(
@@ -66,9 +67,26 @@ public static class ScanEngine
         ScanInProgress = true;
         try
         {
+            // The daemon honours the PERSISTENT default exclusions via clamd.conf
+            // but ignores any extra per-scan excludes. So only exclusions BEYOND
+            // the defaults force the (slower) clamscan path; a scan whose excludes
+            // are just the defaults can still use the daemon.
+            static bool WithinDefaults(IReadOnlyList<string>? session, List<string> defaults) =>
+                session is not { Count: > 0 }
+                || session.All(s => defaults.Any(d => d.Equals(s, StringComparison.OrdinalIgnoreCase)));
+
+            bool exclusionsBeyondDefaults =
+                !WithinDefaults(options.ExcludeDirectories, SettingsManager.Current.ExcludeDirectories)
+                || !WithinDefaults(options.ExcludeExtensions, SettingsManager.Current.ExcludeExtensions)
+                || !WithinDefaults(options.ExcludeFiles, SettingsManager.Current.ExcludeFiles);
+
+            if (exclusionsBeyondDefaults && SettingsManager.Current.UseDaemon && options.Mode == ScanMode.Path)
+                onOutput("Extra per-scan exclusions are set; scanning with clamscan so they take effect (the daemon only knows the default exclusions).");
+
             bool wantDaemon = SettingsManager.Current.UseDaemon
                               && options.Mode == ScanMode.Path
-                              && (options.IncludeExtensions is not { Count: > 0 });
+                              && (options.IncludeExtensions is not { Count: > 0 })
+                              && !exclusionsBeyondDefaults;
 
             bool useDaemon = wantDaemon && await DaemonController.IsRunningAsync();
             if (wantDaemon && !useDaemon)
@@ -167,6 +185,13 @@ public static class ScanEngine
                 var clean = ext?.Trim().TrimStart('.');
                 if (!string.IsNullOrEmpty(clean))
                     sb.Append($"--exclude=\"{ExtensionRegex(clean)}\" ");
+            }
+        if (o.ExcludeFiles is { Count: > 0 })
+            foreach (var file in o.ExcludeFiles)
+            {
+                var trimmed = file?.Trim();
+                if (!string.IsNullOrEmpty(trimmed))
+                    sb.Append($"--exclude=\"^{Regex.Escape(trimmed)}$\" ");
             }
 
         AppendAction(sb, o.Action);

@@ -2,8 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        Title="ClamHub 1.0.0" Height="680" Width="935"
-        MinHeight="680" MinWidth="935"
+        Title="ClamHub 1.0.0" Height="680" Width="1015"
+        MinHeight="680" MinWidth="1015"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None" ResizeMode="CanResize"
         Background="{StaticResource BgBrush}"
@@ -187,17 +187,17 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="200"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="Profile:" VerticalAlignment="Center"
                                        Margin="0,0,10,0" FontWeight="SemiBold"/>
                             <ComboBox Grid.Column="1" x:Name="ProfileCombo" Height="28"
                                       SelectionChanged="ProfileCombo_SelectionChanged"
                                       ToolTip="Selecting a profile fills the scan fields below"/>
-                            <Grid Grid.Column="3" Margin="10,0,0,0">
+                            <Grid Grid.Column="2" Margin="10,0,0,0">
                                 <TextBox x:Name="ProfileNameBox" Width="160" Height="28"
                                          VerticalContentAlignment="Center"/>
                                 <TextBlock Style="{StaticResource PlaceholderText}"
@@ -211,10 +211,10 @@
                                     </TextBlock.Visibility>
                                 </TextBlock>
                             </Grid>
-                            <Button Grid.Column="4" Content="Save" Width="70" Height="28"
+                            <Button Grid.Column="3" Content="Save" Width="70" Height="28"
                                     Margin="8,0,0,0" Click="SaveProfile_Click"
                                     ToolTip="Saves the current scan fields under the entered name, or overwrites the selected profile when the name field is empty"/>
-                            <Button Grid.Column="5" Content="Delete" Width="70" Height="28"
+                            <Button Grid.Column="4" Content="Delete" Width="70" Height="28"
                                     Margin="8,0,0,0" Click="DeleteProfile_Click"
                                     ToolTip="Removes the selected profile"/>
                         </Grid>
@@ -227,6 +227,7 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="Target:" VerticalAlignment="Center"
                                        Margin="0,0,10,0" FontWeight="SemiBold"/>
@@ -234,6 +235,7 @@
                                 <TextBox x:Name="TargetBox" Height="30"
                                          VerticalContentAlignment="Center"
                                          AllowDrop="True"
+                                         KeyDown="TargetBox_KeyDown"
                                          PreviewDragOver="PathBox_PreviewDragOver"
                                          PreviewDrop="PathBox_PreviewDrop"/>
                                 <TextBlock Style="{StaticResource PlaceholderText}"
@@ -247,13 +249,23 @@
                                     </TextBlock.Visibility>
                                 </TextBlock>
                             </Grid>
-                            <Button Grid.Column="2" Content="File..." Width="70" Height="30"
+                            <Button Grid.Column="2" Width="32" Height="30" Padding="0"
+                                    Margin="8,0,0,0" Click="AddToQueue_Click"
+                                    ToolTip="Add this path to the queue (or press Enter in the Target box)">
+                                <Grid Width="12" Height="12">
+                                    <Rectangle Height="1.6" HorizontalAlignment="Stretch"
+                                               VerticalAlignment="Center" Fill="{StaticResource TextBrush}"/>
+                                    <Rectangle Width="1.6" VerticalAlignment="Stretch"
+                                               HorizontalAlignment="Center" Fill="{StaticResource TextBrush}"/>
+                                </Grid>
+                            </Button>
+                            <Button Grid.Column="3" Content="File..." Width="70" Height="30"
                                     Margin="8,0,0,0" Click="BrowseFile_Click"/>
-                            <Button Grid.Column="3" Content="Folder..." Width="70" Height="30"
+                            <Button Grid.Column="4" Content="Folder..." Width="70" Height="30"
                                     Margin="8,0,0,0" Click="BrowseFolder_Click"/>
-                            <Button Grid.Column="4" Content="Queue..." Width="80" Height="30"
+                            <Button Grid.Column="5" x:Name="QueueButton" Content="Queue..." Width="90" Height="30"
                                     Margin="8,0,0,0" Click="ScanQueue_Click"
-                                    ToolTip="Open the scan queue to scan several files and folders in one run"/>
+                                    ToolTip="Open the scan queue to manage queued targets and saved queues"/>
                         </Grid>
 
                         <!-- Action / options row (now second) -->
@@ -555,7 +567,7 @@
                                   SelectionChanged="HistoryList_SelectionChanged">
                             <ListView.View>
                                 <GridView x:Name="HistoryGridView">
-                                    <GridViewColumn Width="130">
+                                    <GridViewColumn Width="120">
                                         <GridViewColumn.Header>
                                             <TextBlock Text="Time" Tag="Timestamp"
                                                        ToolTip="Date and time the scan was started."/>
@@ -568,7 +580,7 @@
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Width="120">
+                                    <GridViewColumn Width="130">
                                         <GridViewColumn.Header>
                                             <TextBlock Text="Kind" Tag="Kind"
                                                        ToolTip="What was scanned: a file/folder, a whole drive, or memory."/>
@@ -580,7 +592,7 @@
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Width="390">
+                                    <GridViewColumn Width="380">
                                         <GridViewColumn.Header>
                                             <TextBlock Text="Target" Tag="Target"
                                                        ToolTip="The scanned path or target."/>
@@ -594,33 +606,20 @@
                                     </GridViewColumn>
                                     <GridViewColumn Width="150">
                                         <GridViewColumn.Header>
-                                            <TextBlock Text="Scanner" Tag="Scanner"
-                                                       ToolTip="Which engine ran the scan: the daemon (clamdscan) or clamscan."/>
+                                            <TextBlock Text="Process" Tag="Process"
+                                                       ToolTip="The process/executable used (e.g. clamdscan.exe), or VirusTotal for VirusTotal lookups. Empty for hash and quarantine actions."/>
                                         </GridViewColumn.Header>
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
-                                                <TextBlock Text="{Binding Scanner}" ToolTip="{Binding Scanner}"
+                                                <TextBlock Text="{Binding Process}" ToolTip="{Binding Process}"
                                                            Margin="8,0,0,0" TextTrimming="CharacterEllipsis"/>
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Width="90">
-                                        <GridViewColumn.Header>
-                                            <TextBlock Text="Duration" Tag="Duration"
-                                                       ToolTip="How long the scan took (hh:mm:ss.s)."/>
-                                        </GridViewColumn.Header>
-                                        <GridViewColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <TextBlock Text="{Binding Duration, StringFormat='hh\\:mm\\:ss\\.f'}"
-                                                           ToolTip="{Binding Duration, StringFormat='hh\\:mm\\:ss\\.fff'}"
-                                                           Margin="8,0,0,0" TextTrimming="CharacterEllipsis"/>
-                                            </DataTemplate>
-                                        </GridViewColumn.CellTemplate>
-                                    </GridViewColumn>
-                                    <GridViewColumn Width="110">
+                                    <GridViewColumn Width="160">
                                         <GridViewColumn.Header>
                                             <TextBlock Text="Result" Tag="ResultLabel"
-                                                       ToolTip="Outcome: clean, the number of infections, or an error."/>
+                                                       ToolTip="Outcome of the entry (scan result, detections, the action taken, or the hash result)."/>
                                         </GridViewColumn.Header>
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
@@ -848,6 +847,7 @@
                     </StackPanel>
                 </Grid>
                 <RichTextBox Grid.Row="1" x:Name="ConsoleBox" IsReadOnly="True" IsDocumentEnabled="True"
+                             IsUndoEnabled="False"
                              Background="#FF17181C" Foreground="#FFD6D6D6" BorderThickness="0"
                              FontFamily="Consolas" FontSize="12" Padding="8"
                              VerticalScrollBarVisibility="Auto"
@@ -869,12 +869,14 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 <TextBlock Grid.Row="0" Text="Output" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                <TextBox Grid.Row="1" x:Name="HistoryDetailBox" IsReadOnly="True"
-                         Background="#FF17181C" Foreground="#FFD6D6D6" BorderThickness="0"
-                         FontFamily="Consolas" FontSize="12" Padding="8"
-                         VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap"
-                         HorizontalScrollBarVisibility="Auto"
-                         Text="Select a scan to see its infected files."/>
+                <RichTextBox Grid.Row="1" x:Name="HistoryDetailBox" IsReadOnly="True" IsDocumentEnabled="True"
+                             IsUndoEnabled="False"
+                             Background="#FF17181C" Foreground="#FFD6D6D6" BorderThickness="0"
+                             FontFamily="Consolas" FontSize="12" Padding="8"
+                             VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Disabled">
+                    <FlowDocument PagePadding="0"/>
+                </RichTextBox>
             </Grid>
         </Border>
             </Grid>

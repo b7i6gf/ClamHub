@@ -21,4 +21,7 @@ public class ScanProfile
 
     /// <summary>Raw extension filter text, e.g. "exe dll sys". Empty scans everything.</summary>
     public string Extensions { get; set; } = "";
+
+    /// <summary>The scan queue saved with this profile (file/folder paths). May be empty.</summary>
+    public List<string> Queue { get; set; } = new();
 }

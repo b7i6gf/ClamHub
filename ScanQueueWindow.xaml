@@ -36,15 +36,27 @@
             <Grid Grid.Row="1" Margin="20,16,20,8">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,12"
                            Foreground="{StaticResource MutedTextBrush}"
-                           Text="Add the files and folders to scan, then Scan all. Each target is scanned in turn and the results appear in the main window. You can also drop files or folders into the list."/>
+                           Text="Add the files and folders to scan. Close to keep them queued, or Scan all to run them now. Save the current list as a named queue to reuse it later. You can also drop files or folders into the list."/>
 
-                <Border Grid.Row="1" Background="{StaticResource PanelBrush}" CornerRadius="6"
+                <WrapPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
+                    <TextBlock Text="Saved queues:" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                    <ComboBox x:Name="QueueProfileCombo" Width="150" Height="28" Margin="0,0,6,4"/>
+                    <Button Content="Load" Height="28" Width="58" Margin="0,0,6,4" Click="LoadQueueProfile_Click"/>
+                    <Button Content="Delete" Height="28" Width="62" Margin="0,0,16,4" Click="DeleteQueueProfile_Click"/>
+                    <TextBox x:Name="QueueProfileNameBox" Width="130" Height="28" Margin="0,0,6,4"
+                             VerticalContentAlignment="Center"
+                             ToolTip="Name to save the current queue under"/>
+                    <Button Content="Save queue" Height="28" Width="92" Margin="0,0,0,4" Click="SaveQueueProfile_Click"/>
+                </WrapPanel>
+
+                <Border Grid.Row="2" Background="{StaticResource PanelBrush}" CornerRadius="6"
                         Padding="2" AllowDrop="True"
                         PreviewDragOver="TargetList_DragOver" Drop="TargetList_Drop">
                     <ListBox x:Name="TargetList" Background="Transparent" BorderThickness="0"
@@ -52,7 +64,7 @@
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
                 </Border>
 
-                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,8,0,0">
+                <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,8,0,0">
                     <Button Content="Add files..." Height="28" Margin="0,0,6,0"
                             Click="AddFiles_Click"/>
                     <Button Content="Add folder..." Height="28" Margin="0,0,6,0"

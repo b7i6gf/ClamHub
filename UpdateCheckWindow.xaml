@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Check for updates" Height="448" Width="560"
-        MinHeight="448" MinWidth="560"
+        MinHeight="448" MinWidth="560" ShowInTaskbar="True"
         WindowStartupLocation="CenterOwner" WindowStyle="None" ResizeMode="CanResize"
         Background="{StaticResource BgBrush}">
     <shell:WindowChrome.WindowChrome>
@@ -24,19 +24,23 @@
             <Grid Grid.Row="0" Background="{StaticResource TitleBarBrush}">
                 <TextBlock Text="Check for updates" FontWeight="SemiBold"
                            VerticalAlignment="Center" Margin="14,0,0,0"/>
-                <Button HorizontalAlignment="Right" Style="{StaticResource CloseCaptionButton}"
-                        Click="Close_Click" ToolTip="Close"
-                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <Path Data="M0,0 L10,10 M0,10 L10,0" Stroke="{StaticResource TextBrush}"
-                          StrokeThickness="1"/>
-                </Button>
+                <StackPanel HorizontalAlignment="Right" Orientation="Horizontal"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button Style="{StaticResource CaptionButton}" Click="Minimize_Click" ToolTip="Minimize">
+                        <Rectangle Width="11" Height="1" Fill="{StaticResource TextBrush}"/>
+                    </Button>
+                    <Button Style="{StaticResource CloseCaptionButton}" Click="Close_Click" ToolTip="Close">
+                        <Path Data="M0,0 L10,10 M0,10 L10,0" Stroke="{StaticResource TextBrush}"
+                              StrokeThickness="1"/>
+                    </Button>
+                </StackPanel>
             </Grid>
 
             <!-- Body: one card per project -->
             <StackPanel Grid.Row="1" Margin="20,16,20,8">
                 <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}"
                            Margin="0,0,0,14"
-                           Text="Latest releases on GitHub. The release date is shown before any download."/>
+                           Text="Latest releases on GitHub."/>
 
                 <!-- ClamHub -->
                 <Border Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="14"

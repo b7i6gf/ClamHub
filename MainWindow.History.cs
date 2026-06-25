@@ -20,6 +20,7 @@ public partial class MainWindow
     {
         HistoryManager.Load();
         BindHistory();
+        SetHistoryDetail("Select an entry to see its details.");
         // Recompute the fill on resize and when the tab becomes visible (its
         // width and viewport are 0 until first shown). Deferred to Loaded
         // priority so the ScrollViewer viewport is already measured.
@@ -101,27 +102,227 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Persists one finished scan and refreshes the list.
-    /// Called from: MainWindow.RunScanGuarded after the summary is printed.
+    /// Adds one history entry (any kind) and refreshes the list. Called from:
+    /// RecordScan and the VirusTotal/Quarantine/Hash recorders.
     /// </summary>
-    private void RecordScan(ScanEngine.ScanOptions options, ScanEngine.ScanResult result, TimeSpan duration)
+    private void AddHistory(string kind, string target, string process, string resultLabel, string summary)
     {
         HistoryManager.Add(new ScanHistoryEntry
         {
             Timestamp = DateTime.Now,
-            Kind = options.Mode == ScanEngine.ScanMode.Memory ? "Memory scan" : "File/folder scan",
-            Target = options.Mode == ScanEngine.ScanMode.Memory ? "Process memory" : options.TargetPath ?? "",
-            Scanner = result.UsedDaemon ? "clamdscan (daemon)" : "clamscan",
-            Duration = duration,
-            InfectedCount = result.InfectedLines.Count,
-            ExitCode = result.ExitCode,
-            InfectedLines = result.InfectedLines
+            Kind = kind,
+            Target = target,
+            Process = process,
+            ResultLabel = resultLabel,
+            Summary = summary.TrimEnd()
         });
         BindHistory();
     }
 
+    /// <summary>Past-tense word for what happened to infected files. Called from: RecordScan, RunQueueScan.</summary>
+    private static string ActionWord(InfectedFileAction action) => action switch
+    {
+        InfectedFileAction.Remove => "removed",
+        InfectedFileAction.Quarantine => "quarantined",
+        _ => "reported"
+    };
+
     /// <summary>
-    /// Shows the infected file lines of the selected history entry.
+    /// Lists the files a path scan actually covered when an extension filter is in
+    /// effect: the target itself if it is a file, otherwise every file under the
+    /// folder (recursive) whose extension is in the filter. Best-effort, skips
+    /// inaccessible folders. Called from: RecordScan (only-extensions summary).
+    /// </summary>
+    private static List<string> MatchedFiles(string target, IReadOnlyList<string> exts)
+    {
+        var result = new List<string>();
+        try
+        {
+            if (System.IO.File.Exists(target)) { result.Add(target); return result; }
+            if (!System.IO.Directory.Exists(target)) return result;
+
+            var set = exts.Select(e => "." + e.TrimStart('.').ToLowerInvariant()).ToHashSet();
+            var opts = new System.IO.EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true
+            };
+            foreach (var f in System.IO.Directory.EnumerateFiles(target, "*", opts))
+                if (set.Contains(System.IO.Path.GetExtension(f).ToLowerInvariant()))
+                    result.Add(f);
+        }
+        catch
+        {
+            // Best-effort listing only; a partial or empty list is acceptable.
+        }
+        return result;
+    }
+
+    /// <summary>Human label for an infected-file action. Called from: BuildScanSettingsHeader.</summary>
+    private static string ActionLabel(InfectedFileAction action) => action switch
+    {
+        InfectedFileAction.ReportOnly => "Report only",
+        InfectedFileAction.Quarantine => "Quarantine",
+        InfectedFileAction.Remove => "Remove",
+        _ => action.ToString()
+    };
+
+    /// <summary>
+    /// Builds the settings block placed at the top of a scan summary: the active
+    /// profile (if one is selected), the action, the extension filter and the
+    /// exclusions in effect. Called from: RecordScan.
+    /// </summary>
+    private string BuildScanSettingsHeader(ScanEngine.ScanOptions options)
+    {
+        var sb = new System.Text.StringBuilder();
+        if (ActiveProfileName is { } profile)
+            sb.AppendLine($"Profile: {profile}");
+        sb.AppendLine($"Action: {ActionLabel(options.Action)}");
+        sb.AppendLine($"Only extensions: {(options.IncludeExtensions is { Count: > 0 } inc ? string.Join(" ", inc) : "(all files)")}");
+
+        var ex = new List<string>();
+        if (options.ExcludeDirectories is { Count: > 0 } ed) ex.Add("dirs: " + string.Join(", ", ed));
+        if (options.ExcludeExtensions is { Count: > 0 } ee) ex.Add("extensions: " + string.Join(" ", ee));
+        if (options.ExcludeFiles is { Count: > 0 } ef)
+            ex.Add("files: " + string.Join(", ", ef.Select(f => System.IO.Path.GetFileName(f))));
+        sb.AppendLine($"Exclusions: {(ex.Count > 0 ? string.Join("; ", ex) : "(none)")}");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Persists one finished single scan (with its full summary) and refreshes the
+    /// list. Queue runs are recorded separately as one combined entry.
+    /// Called from: ScanOneAsync (when record is true).
+    /// </summary>
+    private void RecordScan(ScanEngine.ScanOptions options, ScanEngine.ScanResult result,
+                            TimeSpan duration, DateTime startedAt)
+    {
+        bool memory = options.Mode == ScanEngine.ScanMode.Memory;
+        string target = memory ? "Process memory" : options.TargetPath ?? "";
+        string process = result.UsedDaemon
+            ? System.IO.Path.GetFileName(AppPaths.ClamdScanExe)
+            : System.IO.Path.GetFileName(AppPaths.ClamScanExe);
+
+        // Kind reflects what was scanned: a profile run, a folder, or a single file.
+        string kind = memory ? "Memory scan"
+            : ActiveProfileName is { } pn ? $"{pn} scan"
+            : System.IO.Directory.Exists(target) ? "Folder scan"
+            : "File scan";
+
+        // Result also states what happened to any infected files.
+        string resultLabel = result.ExitCode switch
+        {
+            0 => "Clean",
+            1 => $"{result.InfectedLines.Count} infected ({ActionWord(options.Action)})",
+            _ => "Error"
+        };
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append(BuildScanSettingsHeader(options));
+        sb.AppendLine();
+        sb.AppendLine($"Target: {target}");
+        sb.AppendLine($"Scanner: {(result.UsedDaemon ? "clamdscan (daemon)" : "clamscan")}");
+        sb.AppendLine($"Started: {startedAt:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"Finished: {startedAt + duration:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"Duration: {duration:hh\\:mm\\:ss\\.f}");
+        sb.AppendLine($"Result: {result.ExitCode switch
+        {
+            0 => "CLEAN",
+            1 => "INFECTIONS FOUND",
+            _ => $"COMPLETED WITH ERRORS (exit code {result.ExitCode}, see log)"
+        }}");
+        if (result.InfectedLines.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"Infected files ({result.InfectedLines.Count}):");
+            foreach (var line in result.InfectedLines) sb.AppendLine(line);
+        }
+
+        // For an only-extensions scan, list the files that were actually covered.
+        if (!memory && options.IncludeExtensions is { Count: > 0 } incExt)
+        {
+            var scanned = MatchedFiles(target, incExt);
+            sb.AppendLine();
+            sb.AppendLine($"Scanned objects ({scanned.Count}):");
+            const int cap = 1000;
+            foreach (var f in scanned.Take(cap)) sb.AppendLine(f);
+            if (scanned.Count > cap) sb.AppendLine($"...and {scanned.Count - cap} more");
+        }
+
+        AddHistory(kind, target, process, resultLabel, sb.ToString());
+    }
+
+    /// <summary>Short per-target status used in the queue summary and console. Called from: RunQueueScan, RecordQueueScan.</summary>
+    private static string QueueStatus(ScanEngine.ScanResult r) =>
+        !r.Started ? (r.Error ?? "not started")
+        : r.Error == "Cancelled" ? "CANCELLED"
+        : r.ExitCode switch
+        {
+            0 => "CLEAN",
+            1 => $"{r.InfectedLines.Count} infected",
+            _ => $"errors (exit {r.ExitCode})"
+        };
+
+    /// <summary>
+    /// Records the whole queue run as a single history entry: the shared settings,
+    /// start/end, every target with its result, and the aggregate. Called from:
+    /// MainWindow.RunQueueScan after the batch finishes.
+    /// </summary>
+    private void RecordQueueScan(
+        List<(string Target, ScanEngine.ScanResult Result)> results,
+        InfectedFileAction action, IReadOnlyList<string> extensions,
+        DateTime startedAt, TimeSpan duration, bool cancelled)
+    {
+        int totalInfected = results.Where(r => r.Result.ExitCode == 1).Sum(r => r.Result.InfectedLines.Count);
+        bool anyError = results.Any(r => !r.Result.Started || r.Result.ExitCode >= 2);
+
+        string resultLabel =
+            totalInfected > 0 ? $"{totalInfected} infected ({ActionWord(action)})"
+            : anyError ? "Completed with errors"
+            : cancelled ? "Cancelled"
+            : "Clean";
+
+        // Representative options just for the settings header (target path unused there).
+        var headerOptions = new ScanEngine.ScanOptions(
+            ScanEngine.ScanMode.Path, null, action,
+            SettingsManager.Current.MultiScan, extensions, false,
+            _sessionExcludeDirs, _sessionExcludeExts, _sessionExcludeFiles);
+
+        bool usedDaemon = results.Any(r => r.Result.UsedDaemon);
+        string process = usedDaemon
+            ? System.IO.Path.GetFileName(AppPaths.ClamdScanExe)
+            : System.IO.Path.GetFileName(AppPaths.ClamScanExe);
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append(BuildScanSettingsHeader(headerOptions));
+        sb.AppendLine();
+        sb.AppendLine($"Started: {startedAt:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"Finished: {startedAt + duration:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"Duration: {duration:hh\\:mm\\:ss\\.f}");
+        if (cancelled) sb.AppendLine("Note: the run was cancelled before all targets were scanned.");
+        sb.AppendLine();
+        sb.AppendLine($"Targets ({results.Count}):");
+        foreach (var (t, r) in results)
+            sb.AppendLine($"  {QueueStatus(r),-24}  {t}");
+
+        if (totalInfected > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"Infected files ({totalInfected}):");
+            foreach (var (_, res) in results)
+                foreach (var line in res.InfectedLines)
+                    sb.AppendLine(line);
+        }
+
+        AddHistory("Queue scan", $"{results.Count} target(s)", process, resultLabel, sb.ToString());
+    }
+
+    /// <summary>Renders one plain text block into the detail pane. Called from: the history handlers.</summary>
+    private void SetHistoryDetail(string text)
+        => ConsoleFormatting.SetLines(HistoryDetailBox, new[] { text });
+
+    /// <summary>
+    /// Shows the stored summary of the selected history entry (URLs clickable).
     /// Called from: XAML SelectionChanged binding of HistoryList.
     /// </summary>
     private void HistoryList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -129,17 +330,13 @@ public partial class MainWindow
         if (HistoryList.SelectedItem is not ScanHistoryEntry entry)
             return;
 
-        if (entry.InfectedLines.Count == 0)
+        if (string.IsNullOrEmpty(entry.Summary))
         {
-            HistoryDetailBox.Text = entry.ExitCode >= 2
-                ? "This scan ended with an error. See the scan log for details."
-                : "No infected files were found in this scan.";
+            SetHistoryDetail("(no details stored for this entry)");
             return;
         }
-
-        HistoryDetailBox.Text =
-            $"Infected files ({entry.InfectedLines.Count}):{Environment.NewLine}{Environment.NewLine}"
-            + string.Join(Environment.NewLine, entry.InfectedLines);
+        ConsoleFormatting.SetLines(HistoryDetailBox,
+            entry.Summary.Replace("\r\n", "\n").Split('\n'));
     }
 
     /// <summary>Reloads the history from disk. Called from: XAML Click binding.</summary>
@@ -147,7 +344,7 @@ public partial class MainWindow
     {
         HistoryManager.Load();
         BindHistory();
-        HistoryDetailBox.Text = "Select a scan to see its infected files.";
+        SetHistoryDetail("Select an entry to see its details.");
     }
 
     /// <summary>
@@ -159,7 +356,7 @@ public partial class MainWindow
         {
             if (!System.IO.File.Exists(AppPaths.HistoryFile))
             {
-                HistoryDetailBox.Text = "No history file yet, run a scan first.";
+                SetHistoryDetail("No history file yet, run a scan first.");
                 return;
             }
             System.Diagnostics.Process.Start(
@@ -167,7 +364,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            HistoryDetailBox.Text = $"Could not open history file: {ex.Message}";
+            SetHistoryDetail($"Could not open history file: {ex.Message}");
         }
     }
 
@@ -179,7 +376,7 @@ public partial class MainWindow
 
         HistoryManager.Clear();
         BindHistory();
-        HistoryDetailBox.Text = "History cleared.";
+        SetHistoryDetail("History cleared.");
     }
 
     /// <summary>
@@ -190,13 +387,13 @@ public partial class MainWindow
     {
         if (HistoryList.SelectedItem is not ScanHistoryEntry entry)
         {
-            HistoryDetailBox.Text = "Select a history entry to delete.";
+            SetHistoryDetail("Select a history entry to delete.");
             return;
         }
 
         HistoryManager.Delete(entry);
         BindHistory();
-        HistoryDetailBox.Text = "Entry deleted.";
+        SetHistoryDetail("Entry deleted.");
     }
 
     /// <summary>

@@ -112,6 +112,13 @@ public class AppSettings
     /// </summary>
     public List<string> ExcludeExtensions { get; set; } = new();
 
+    /// <summary>
+    /// Individual files excluded from every scan (absolute paths). Applied to
+    /// clamscan via an anchored --exclude regex. The daemon ignores per-scan
+    /// excludes, so any exclusion forces the scan onto clamscan.
+    /// </summary>
+    public List<string> ExcludeFiles { get; set; } = new();
+
     /// <summary>Resolved thread count. Called from ConfigManager when writing clamd.conf.</summary>
     public int EffectiveMaxThreads()
         => MaxThreads > 0 ? MaxThreads : Environment.ProcessorCount;

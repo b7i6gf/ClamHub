@@ -15,6 +15,13 @@ public partial class MainWindow
     /// <summary>Suppresses SelectionChanged side effects while the combo is rebuilt.</summary>
     private bool _profileComboUpdating;
 
+    /// <summary>Combo entry shown when no profile is selected.</summary>
+    private const string NoProfile = "(-)";
+
+    /// <summary>The selected real profile name, or null when "(-)" (none) is selected.</summary>
+    private string? ActiveProfileName =>
+        ProfileCombo.SelectedItem is string s && s != NoProfile ? s : null;
+
     /// <summary>
     /// Loads profiles.json and fills the combo box.
     /// Called from: MainWindow.InitializeAsync.
@@ -33,12 +40,12 @@ public partial class MainWindow
     {
         _profileComboUpdating = true;
         ProfileCombo.Items.Clear();
+        ProfileCombo.Items.Add(NoProfile);
         foreach (var profile in ProfileManager.Profiles)
             ProfileCombo.Items.Add(profile.Name);
         _profileComboUpdating = false;
 
-        if (selectName != null)
-            ProfileCombo.SelectedItem = selectName;
+        ProfileCombo.SelectedItem = selectName ?? NoProfile;
     }
 
     /// <summary>
@@ -47,7 +54,7 @@ public partial class MainWindow
     /// </summary>
     private void ProfileCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_profileComboUpdating || ProfileCombo.SelectedItem is not string name) return;
+        if (_profileComboUpdating || ProfileCombo.SelectedItem is not string name || name == NoProfile) return;
         var profile = ProfileManager.Profiles.FirstOrDefault(p => p.Name == name);
         if (profile == null) return;
 
@@ -57,6 +64,15 @@ public partial class MainWindow
         // Profiles do not carry their own exclusions; switching profile returns
         // the scan-session exclusions to the persistent settings defaults.
         ResetSessionExclusions();
+
+        // Restore the queue saved with the profile, skipping paths that are gone.
+        _queue.Clear();
+        foreach (var p in profile.Queue)
+            if ((System.IO.File.Exists(p) || System.IO.Directory.Exists(p)) &&
+                !_queue.Any(x => x.Equals(p, StringComparison.OrdinalIgnoreCase)))
+                _queue.Add(p);
+        UpdateQueueIndicator();
+
         AppendLine($"Profile applied: {profile.Name}");
     }
 
@@ -69,7 +85,7 @@ public partial class MainWindow
     {
         var name = ProfileNameBox.Text.Trim();
         if (name.Length == 0)
-            name = ProfileCombo.SelectedItem as string ?? "";
+            name = ActiveProfileName ?? "";
         if (name.Length == 0)
         {
             AppendLine("Profile: enter a name (or select a profile to overwrite) before saving.");
@@ -81,7 +97,8 @@ public partial class MainWindow
             Name = name,
             TargetPath = TargetBox.Text.Trim(),
             Action = (InfectedFileAction)ActionCombo.SelectedIndex,
-            Extensions = ExtensionsBox.Text.Trim()
+            Extensions = ExtensionsBox.Text.Trim(),
+            Queue = _queue.ToList()
         });
 
         ProfileNameBox.Text = "";
@@ -95,7 +112,7 @@ public partial class MainWindow
     /// </summary>
     private void DeleteProfile_Click(object sender, RoutedEventArgs e)
     {
-        if (ProfileCombo.SelectedItem is not string name)
+        if (ActiveProfileName is not string name)
         {
             AppendLine("Profile: select a profile to delete.");
             return;

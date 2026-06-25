@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     // Applied to clamscan runs only (the daemon uses clamd.conf defaults).
     private List<string> _sessionExcludeDirs = new();
     private List<string> _sessionExcludeExts = new();
+    private List<string> _sessionExcludeFiles = new();
 
     /// <summary>
     /// Resets the scan-session exclusions to the persistent settings defaults.
@@ -32,6 +33,7 @@ public partial class MainWindow : Window
     {
         _sessionExcludeDirs = new List<string>(SettingsManager.Current.ExcludeDirectories);
         _sessionExcludeExts = new List<string>(SettingsManager.Current.ExcludeExtensions);
+        _sessionExcludeFiles = new List<string>(SettingsManager.Current.ExcludeFiles);
     }
     private CancellationTokenSource? _scanCts;
 
@@ -146,6 +148,7 @@ public partial class MainWindow : Window
         RefreshVirusTotalButtons();
         InitializeConsoleView();
         ResetSessionExclusions();
+        UpdateQueueIndicator();
 
         if (IsElevated())
         {
@@ -227,7 +230,8 @@ public partial class MainWindow : Window
             ScanEngine.ParseExtensions(ExtensionsBox.Text),
             false,
             _sessionExcludeDirs,
-            _sessionExcludeExts);
+            _sessionExcludeExts,
+            _sessionExcludeFiles);
         await RunScanGuarded(options);
     }
 
@@ -268,6 +272,7 @@ public partial class MainWindow : Window
     {
         if (_busy) return;
         _busy = true;
+        SetOutputViewSwitchingEnabled(false); // lock output layout mid-scan
         StartDaemonButton.IsEnabled = StopDaemonButton.IsEnabled = false;
         UpdateButton.IsEnabled = ScanButton.IsEnabled = MemoryScanButton.IsEnabled = false;
         ScanVirusTotalButton.IsEnabled = false;
@@ -278,10 +283,21 @@ public partial class MainWindow : Window
         finally
         {
             _busy = false;
+            SetOutputViewSwitchingEnabled(true);
             UpdateButton.IsEnabled = ScanButton.IsEnabled = MemoryScanButton.IsEnabled = true;
             RefreshVirusTotalButtons();
             await RefreshDaemonStatusAsync();
         }
+    }
+
+    /// <summary>
+    /// Enables or disables the output view toggles (bottom/right/window) so the
+    /// output layout cannot be switched mid-scan while the console is streaming.
+    /// Tabs stay usable. Called from: RunGuarded.
+    /// </summary>
+    private void SetOutputViewSwitchingEnabled(bool enabled)
+    {
+        ViewBottom.IsEnabled = ViewRight.IsEnabled = ViewWindow.IsEnabled = enabled;
     }
 
     /// <summary>Start daemon button. Called from: XAML Click binding.</summary>
@@ -299,7 +315,7 @@ public partial class MainWindow : Window
     /// The wait window closes automatically when done. Called from: Update_Click
     /// and the startup update-on-start path.
     /// </summary>
-    private async Task RunSignatureUpdateAsync()
+    private async Task<bool> RunSignatureUpdateAsync()
     {
         bool initialCreation = !UpdateManager.DatabasesPresent();
         DbDownloadWindow? wait = null;
@@ -311,7 +327,7 @@ public partial class MainWindow : Window
         }
         try
         {
-            await UpdateManager.RunUpdateAsync(AppendLine);
+            return await UpdateManager.RunUpdateAsync(AppendLine);
         }
         finally
         {
@@ -329,13 +345,17 @@ public partial class MainWindow : Window
         {
             AppendSection("SIGNATURE UPDATE");
             bool daemonWasRunning = await DaemonController.IsRunningAsync();
-            await RunSignatureUpdateAsync();
+            bool ok = await RunSignatureUpdateAsync();
             // A running daemon can briefly refuse connections while it swaps
             // databases; reload it with retries so it picks up the new signatures.
             if (daemonWasRunning)
                 await DaemonController.ReloadAsync(AppendLine);
             var info = await UpdateManager.GetVersionInfoAsync();
             if (info != null) _versionInfo = info;
+            SetSettingsStatus(
+                ok ? "Signature update finished. See the console for details."
+                   : "Signature update failed. See the console.",
+                ok ? "OkBrush" : "DangerBrush");
         });
 
     /// <summary>File picker for the scan target. Called from: XAML Click binding.</summary>
@@ -359,19 +379,84 @@ public partial class MainWindow : Window
     /// queued file and folder in turn in the main console.
     /// Called from: XAML Click binding (Queue button).
     /// </summary>
+    /// <summary>The integrated scan queue (session-persistent). Built via the Target [+] button / Enter
+    /// and the queue window; scanned by the global Start scan when not empty.</summary>
+    private readonly List<string> _queue = new();
+
+    /// <summary>
+    /// Opens the queue window seeded with the current queue, syncs any edits back
+    /// when it closes, and runs the queue if the window asked to. Called from:
+    /// XAML Click binding of the Queue button.
+    /// </summary>
     private async void ScanQueue_Click(object sender, RoutedEventArgs e)
     {
-        var window = new ScanQueueWindow { Owner = this };
-        if (window.ShowDialog() == true && window.Targets.Count > 0)
-            await RunQueueScan(window.Targets);
+        var window = new ScanQueueWindow(_queue) { Owner = this };
+        window.ShowDialog();
+
+        _queue.Clear();
+        _queue.AddRange(window.Targets); // keep edits made in the window
+        UpdateQueueIndicator();
+
+        if (window.ScanRequested && _queue.Count > 0)
+            await RunQueueScan(_queue.ToList());
     }
 
     /// <summary>
-    /// Builds ScanOptions from the UI inputs and starts a path scan.
-    /// Called from: XAML Click binding of the Start scan button.
+    /// Adds the path currently in the Target box to the queue (skipping a missing
+    /// or duplicate path), then clears the box so the next can be entered. On a
+    /// missing path the box is left as-is as feedback. Called from: the Target [+]
+    /// button and pressing Enter in the Target box.
+    /// </summary>
+    private void AddTargetToQueue()
+    {
+        var path = TargetBox.Text.Replace("\"", "").Trim().TrimEnd('\\');
+        if (path.Length == 0) return;
+        if (!System.IO.File.Exists(path) && !System.IO.Directory.Exists(path))
+            return; // not found: keep the text visible, add nothing
+
+        if (!_queue.Any(x => x.Equals(path, StringComparison.OrdinalIgnoreCase)))
+            _queue.Add(path);
+        TargetBox.Clear();
+        UpdateQueueIndicator();
+    }
+
+    /// <summary>Target [+] button. Called from: XAML Click binding.</summary>
+    private void AddToQueue_Click(object sender, RoutedEventArgs e) => AddTargetToQueue();
+
+    /// <summary>Enter in the Target box adds it to the queue. Called from: XAML KeyDown binding.</summary>
+    private void TargetBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Enter)
+        {
+            AddTargetToQueue();
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Updates the Queue button to show the queued count and an accent colour when
+    /// the queue is not empty (the visual indicator). Called from: queue changes
+    /// and InitializeAsync.
+    /// </summary>
+    private void UpdateQueueIndicator()
+    {
+        int n = _queue.Count;
+        QueueButton.Content = n > 0 ? $"Queue ({n})" : "Queue...";
+        QueueButton.Foreground = (System.Windows.Media.Brush)FindResource(n > 0 ? "AccentBrush" : "TextBrush");
+    }
+
+    /// <summary>
+    /// Global Start scan: runs the whole queue when it has entries, otherwise a
+    /// single scan of the Target box. Called from: XAML Click binding.
     /// </summary>
     private async void Scan_Click(object sender, RoutedEventArgs e)
     {
+        if (_queue.Count > 0)
+        {
+            await RunQueueScan(_queue.ToList());
+            return;
+        }
+
         var options = new ScanEngine.ScanOptions(
             ScanEngine.ScanMode.Path,
             TargetBox.Text,
@@ -380,7 +465,8 @@ public partial class MainWindow : Window
             ScanEngine.ParseExtensions(ExtensionsBox.Text),
             false,
             _sessionExcludeDirs,
-            _sessionExcludeExts);
+            _sessionExcludeExts,
+            _sessionExcludeFiles);
 
         await RunScanGuarded(options);
     }
@@ -421,7 +507,13 @@ public partial class MainWindow : Window
     private async Task RunQueueScan(IReadOnlyList<string> targets)
         => await RunGuarded(async () =>
         {
-            var summary = new List<(string Target, string Status)>();
+            var action = (InfectedFileAction)ActionCombo.SelectedIndex;
+            var extensions = ScanEngine.ParseExtensions(ExtensionsBox.Text);
+            var startedAt = DateTime.Now;
+
+            var results = new List<(string Target, ScanEngine.ScanResult Result)>();
+            bool cancelled = false;
+
             foreach (var raw in targets)
             {
                 var target = raw.Replace("\"", "").Trim();
@@ -430,35 +522,39 @@ public partial class MainWindow : Window
                 var options = new ScanEngine.ScanOptions(
                     ScanEngine.ScanMode.Path,
                     target,
-                    (InfectedFileAction)ActionCombo.SelectedIndex,
+                    action,
                     SettingsManager.Current.MultiScan,
-                    ScanEngine.ParseExtensions(ExtensionsBox.Text),
+                    extensions,
                     false,
                     _sessionExcludeDirs,
-                    _sessionExcludeExts);
+                    _sessionExcludeExts,
+                    _sessionExcludeFiles);
 
-                var result = await ScanOneAsync(options);
-
-                string status =
-                    !result.Started ? (result.Error ?? "not started")
-                    : result.ExitCode switch
-                    {
-                        0 => "CLEAN",
-                        1 => $"{result.InfectedLines.Count} infected",
-                        _ => $"errors (exit {result.ExitCode})"
-                    };
-                summary.Add((target, status));
+                // record:false - the queue is logged as one combined entry below.
+                var result = await ScanOneAsync(options, record: false);
+                results.Add((target, result));
 
                 // A user cancellation aborts the remaining targets.
-                if (result.Error == "Cancelled") break;
+                if (result.Error == "Cancelled") { cancelled = true; break; }
             }
 
             AppendSection("QUEUE SUMMARY");
-            if (summary.Count == 0)
+            if (results.Count == 0)
                 AppendLine("No valid targets in the queue.");
             else
-                foreach (var (t, s) in summary)
-                    AppendLine($"{s,-24}  {t}");
+                foreach (var (t, r) in results)
+                    AppendLine($"{QueueStatus(r),-24}  {t}");
+
+            // One combined history entry for the whole queue run.
+            if (results.Count > 0)
+                RecordQueueScan(results, action, extensions, startedAt, DateTime.Now - startedAt, cancelled);
+
+            // Clear the queue after a completed (non-cancelled) run.
+            if (!cancelled)
+            {
+                _queue.Clear();
+                UpdateQueueIndicator();
+            }
         });
 
     /// <summary>
@@ -468,7 +564,7 @@ public partial class MainWindow : Window
     /// RunGuarded; the caller does. Called from: RunScanGuarded (single scan) and
     /// RunQueueScan (each queued target).
     /// </summary>
-    private async Task<ScanEngine.ScanResult> ScanOneAsync(ScanEngine.ScanOptions options)
+    private async Task<ScanEngine.ScanResult> ScanOneAsync(ScanEngine.ScanOptions options, bool record = true)
     {
         string title = options.Mode == ScanEngine.ScanMode.Memory
             ? "MEMORY SCAN"
@@ -482,6 +578,7 @@ public partial class MainWindow : Window
         ScanIndicatorText.Text = options.Mode == ScanEngine.ScanMode.Memory
             ? "Memory scan running..."
             : $"Scanning {options.TargetPath} ...";
+        var startedAt = DateTime.Now;
         var watch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
@@ -548,8 +645,9 @@ public partial class MainWindow : Window
                 InfectedCountText.Foreground = (Brush)FindResource("DangerBrush");
             }
 
-            // Persist the scan into the history tab.
-            RecordScan(options, result, watch.Elapsed);
+            // Persist the scan into the history tab (suppressed for queued targets,
+            // which the queue runner records as one combined entry instead).
+            if (record) RecordScan(options, result, watch.Elapsed, startedAt);
 
             // If the user chose Quarantine, move the infected files now.
             // ClamAV scanned report-only (see ScanEngine.AppendAction); the
@@ -638,18 +736,19 @@ public partial class MainWindow : Window
     /// </summary>
     private void Exclusions_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new ExclusionsWindow(_sessionExcludeDirs, _sessionExcludeExts,
+        var dialog = new ExclusionsWindow(_sessionExcludeDirs, _sessionExcludeFiles, _sessionExcludeExts,
             "Temporary exclusions for this session. They reset to the Settings defaults "
             + "on restart or profile change, and apply to clamscan scans (the daemon uses "
-            + "the defaults from Settings).") { Owner = this };
+            + "the defaults from Settings). Drag files or folders in to add them.") { Owner = this };
         if (dialog.ShowDialog() != true) return;
 
         _sessionExcludeDirs = dialog.ResultDirectories;
+        _sessionExcludeFiles = dialog.ResultFiles;
         _sessionExcludeExts = dialog.ResultExtensions;
         AppendSection("SCAN EXCLUSIONS");
-        AppendLine($"Session exclusions set: {_sessionExcludeDirs.Count} director" +
-                   $"{(_sessionExcludeDirs.Count == 1 ? "y" : "ies")}, {_sessionExcludeExts.Count} extension(s).");
-        AppendLine("These apply to clamscan scans and reset on restart or profile change.");
+        AppendLine($"Session exclusions set: {_sessionExcludeDirs.Count} folder(s), " +
+                   $"{_sessionExcludeFiles.Count} file(s), {_sessionExcludeExts.Count} extension(s).");
+        AppendLine("Exclusions beyond the Settings defaults make that scan use clamscan; defaults stay on the daemon.");
     }
 
     /// <summary>
@@ -662,13 +761,16 @@ public partial class MainWindow : Window
     {
         var dialog = new ExclusionsWindow(
             SettingsManager.Current.ExcludeDirectories,
+            SettingsManager.Current.ExcludeFiles,
             SettingsManager.Current.ExcludeExtensions,
             "Default exclusions. Always active, including after restart. Used by the "
-            + "daemon (via clamd.conf) and as the starting point for scan-session exclusions.")
+            + "daemon (via clamd.conf) and as the starting point for scan-session exclusions. "
+            + "Drag files or folders in to add them.")
             { Owner = this };
         if (dialog.ShowDialog() != true) return;
 
         SettingsManager.Current.ExcludeDirectories = dialog.ResultDirectories;
+        SettingsManager.Current.ExcludeFiles = dialog.ResultFiles;
         SettingsManager.Current.ExcludeExtensions = dialog.ResultExtensions;
         SettingsManager.Save();
         ResetSessionExclusions();
@@ -678,8 +780,8 @@ public partial class MainWindow : Window
 
         SetSettingsStatus("Default exclusions saved.", "OkBrush");
         AppendSection("DEFAULT EXCLUSIONS");
-        AppendLine($"Saved {dialog.ResultDirectories.Count} default director" +
-                   $"{(dialog.ResultDirectories.Count == 1 ? "y" : "ies")} and {dialog.ResultExtensions.Count} extension(s).");
+        AppendLine($"Saved {dialog.ResultDirectories.Count} folder(s), {dialog.ResultFiles.Count} file(s) " +
+                   $"and {dialog.ResultExtensions.Count} extension(s) as defaults.");
 
         if (await DaemonController.IsRunningAsync(1000))
         {
@@ -754,22 +856,35 @@ public partial class MainWindow : Window
             string algo = ((System.Windows.Controls.ComboBoxItem)HashAlgoCombo.SelectedItem)
                 .Content.ToString()!;
             var expected = ExpectedHashBox.Text;
+            bool hasExpected = !string.IsNullOrWhiteSpace(expected);
             AppendSection($"HASH  {path}");
+
+            var summary = new System.Text.StringBuilder();
+            summary.AppendLine($"File: {path}");
+            bool matched = false;
 
             if (algo == "All")
             {
                 var all = await HashTool.ComputeAllAsync(path);
                 foreach (var (name, hash) in all)
-                    AppendLine($"{name,-7}: {hash ?? "FAILED (file locked or unreadable)"}");
+                {
+                    string line = $"{name,-7}: {hash ?? "FAILED (file locked or unreadable)"}";
+                    AppendLine(line);
+                    summary.AppendLine(line);
+                }
 
                 // Compare the expected hash against every algorithm and name the match.
-                if (!string.IsNullOrWhiteSpace(expected))
+                if (hasExpected)
                 {
+                    summary.AppendLine($"Expected: {expected.Trim()}");
                     var match = all.FirstOrDefault(kv =>
                         kv.Value != null && HashTool.Matches(kv.Value, expected));
-                    AppendLine(match.Key != null
+                    matched = match.Key != null;
+                    string verdict = matched
                         ? $"MATCH: expected hash equals the {match.Key} hash."
-                        : "MISMATCH: expected hash matches none of the computed hashes.");
+                        : "MISMATCH: expected hash matches none of the computed hashes.";
+                    AppendLine(verdict);
+                    summary.AppendLine(verdict);
                 }
             }
             else
@@ -778,17 +893,32 @@ public partial class MainWindow : Window
                 if (hash == null)
                 {
                     AppendLine($"{algo}: FAILED (file locked or unreadable)");
+                    AddHistory("Hash compute", path, "", "compute failed",
+                        $"File: {path}{Environment.NewLine}{algo}: FAILED (file locked or unreadable)");
                     return;
                 }
-                AppendLine($"{algo}: {hash}");
+                string hline = $"{algo}: {hash}";
+                AppendLine(hline);
+                summary.AppendLine(hline);
 
-                if (!string.IsNullOrWhiteSpace(expected))
+                if (hasExpected)
                 {
-                    AppendLine(HashTool.Matches(hash, expected)
+                    summary.AppendLine($"Expected: {expected.Trim()}");
+                    matched = HashTool.Matches(hash, expected);
+                    string verdict = matched
                         ? "MATCH: computed hash equals the expected value."
-                        : $"MISMATCH: expected {expected.Trim()}");
+                        : $"MISMATCH: expected {expected.Trim()}";
+                    AppendLine(verdict);
+                    summary.AppendLine(verdict);
                 }
             }
+
+            // A pasted expected hash makes this a comparison; otherwise a plain compute.
+            if (hasExpected)
+                AddHistory("Hash comparison", path, "",
+                    matched ? "successful comparison" : "unsuccessful comparison", summary.ToString());
+            else
+                AddHistory("Hash compute", path, "", "hash computed", summary.ToString());
         }
         finally
         {
@@ -806,6 +936,7 @@ public partial class MainWindow : Window
     private void ClearConsoleAll()
     {
         _consoleLines.Clear();
+        _consoleChars = 0;
         ConsoleFormatting.Clear(ConsoleBox);
         _consoleWindow?.Clear();
     }
@@ -900,16 +1031,32 @@ public partial class MainWindow : Window
         {
             AppendLine("Hash unknown to VirusTotal. The file has never been submitted there.");
             AppendLine("Note: unknown does not mean safe, only that no one uploaded it yet.");
+            AddHistory("VirusTotal scan", displayName, "VirusTotal", "Unknown to VT",
+                $"SHA256: {sha256}{Environment.NewLine}" +
+                "Hash unknown to VirusTotal (the file has never been submitted there).");
             return;
         }
 
         int total = result.Malicious + result.Suspicious + result.Harmless + result.Undetected;
-        AppendLine($"Verdict: {result.Malicious}/{total} engines flag this file as malicious" +
-                    (result.Suspicious > 0 ? $", {result.Suspicious} as suspicious." : "."));
-        AppendLine(result.Malicious == 0
+        string verdictLine = $"Verdict: {result.Malicious}/{total} engines flag this file as malicious" +
+                             (result.Suspicious > 0 ? $", {result.Suspicious} as suspicious." : ".");
+        string cautionLine = result.Malicious == 0
             ? "No engine reports this file as malicious."
-            : "CAUTION: at least one engine reports this file as malicious.");
-        AppendLine($"Details: https://www.virustotal.com/gui/file/{sha256.ToLowerInvariant()}");
+            : "CAUTION: at least one engine reports this file as malicious.";
+        string link = $"https://www.virustotal.com/gui/file/{sha256.ToLowerInvariant()}";
+        AppendLine(verdictLine);
+        AppendLine(cautionLine);
+        AppendLine($"Details: {link}");
+
+        AddHistory("VirusTotal scan", displayName, "VirusTotal",
+            result.Malicious == 0 ? $"Clean (0/{total})" : $"{result.Malicious}/{total} malicious",
+            string.Join(Environment.NewLine, new[]
+            {
+                $"SHA256: {sha256}",
+                verdictLine,
+                cautionLine,
+                $"Details: {link}"
+            }));
     }
 
     /// <summary>
@@ -1649,9 +1796,40 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(() =>
         {
             _consoleLines.Add(line);
+            _consoleChars += line.Length + 1;
             ConsoleFormatting.AppendLine(ConsoleBox, line);
             _consoleWindow?.AppendLine(line);
+            TrimConsole();
         });
+    }
+
+    // Upper bound on console text. A full clamconf diagnostics dump is only a few tens
+    // of KB, so this keeps many of them while preventing the unbounded growth that
+    // slows the RichTextBox down. When exceeded, the oldest lines are dropped.
+    private const int MaxConsoleChars = 200_000;
+    private int _consoleChars;
+
+    /// <summary>
+    /// Drops the oldest lines from both console views once the text passes
+    /// MaxConsoleChars, trimming down to ~85% so it does not run on every append.
+    /// Called from: AppendLine.
+    /// </summary>
+    private void TrimConsole()
+    {
+        if (_consoleChars <= MaxConsoleChars) return;
+        int target = MaxConsoleChars * 85 / 100;
+        int removed = 0;
+        while (_consoleChars > target && _consoleLines.Count > 1)
+        {
+            _consoleChars -= _consoleLines[0].Length + 1;
+            _consoleLines.RemoveAt(0);
+            removed++;
+        }
+        if (removed > 0)
+        {
+            ConsoleFormatting.RemoveLeadingLines(ConsoleBox, removed);
+            _consoleWindow?.RemoveLeadingLines(removed);
+        }
     }
 
     /// <summary>

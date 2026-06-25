@@ -1,41 +1,34 @@
 namespace ClamHub.Models;
 
 /// <summary>
-/// One recorded scan, persisted in history.json by Core.HistoryManager and
-/// shown in the History tab. Holds the infected file lines so a past finding
-/// can be reviewed without re-scanning.
+/// One recorded action (a scan, a VirusTotal lookup, a quarantine action or a
+/// hash operation), persisted in history.json by Core.HistoryManager and shown
+/// in the History tab. Summary holds the full multi-line detail shown when the
+/// entry is selected (URLs become clickable in the detail pane).
 /// </summary>
 public class ScanHistoryEntry
 {
-    /// <summary>When the scan finished (local time).</summary>
+    /// <summary>When the action happened (local time).</summary>
     public DateTime Timestamp { get; set; }
 
-    /// <summary>"File/folder scan", "Memory scan", etc.</summary>
+    /// <summary>
+    /// "File/folder scan", "Memory scan", "VirusTotal scan", "Quarantine action",
+    /// "Hash compute" or "Hash comparison".
+    /// </summary>
     public string Kind { get; set; } = "";
 
-    /// <summary>Scanned target path, or "Process memory" for memory scans.</summary>
+    /// <summary>The scanned target / root folder / file, or the subject of the action.</summary>
     public string Target { get; set; } = "";
 
-    /// <summary>"clamdscan (daemon)" or "clamscan".</summary>
-    public string Scanner { get; set; } = "";
+    /// <summary>
+    /// The ClamAV executable that ran (clamdscan.exe / clamscan.exe), "VirusTotal"
+    /// for VirusTotal lookups, or empty for hash and quarantine actions.
+    /// </summary>
+    public string Process { get; set; } = "";
 
-    /// <summary>Wall clock duration of the scan.</summary>
-    public TimeSpan Duration { get; set; }
+    /// <summary>Short result text shown in the Result column (set per source).</summary>
+    public string ResultLabel { get; set; } = "";
 
-    /// <summary>Number of infected files found.</summary>
-    public int InfectedCount { get; set; }
-
-    /// <summary>Process exit code: 0 clean, 1 infections, 2+ error.</summary>
-    public int ExitCode { get; set; }
-
-    /// <summary>Raw "FOUND" lines, shown when the entry is selected.</summary>
-    public List<string> InfectedLines { get; set; } = new();
-
-    /// <summary>Short result label derived from the exit code. Used by the History tab.</summary>
-    public string ResultLabel => ExitCode switch
-    {
-        0 => "Clean",
-        1 => $"{InfectedCount} infected",
-        _ => "Error"
-    };
+    /// <summary>Full multi-line detail shown when the entry is selected.</summary>
+    public string Summary { get; set; } = "";
 }

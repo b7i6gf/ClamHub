@@ -113,6 +113,11 @@ public partial class MainWindow
             BindQuarantine();
             AppendSection("QUARANTINE");
             AppendLine($"{en.OriginalName} {verb} to {en.OriginalPath}");
+            AddHistory("Quarantine action", en.OriginalPath, "", "restored",
+                $"Restored from quarantine.{Environment.NewLine}" +
+                $"File: {en.OriginalName}{Environment.NewLine}" +
+                $"To: {en.OriginalPath}" +
+                (verb.Contains("overwritten") ? $"{Environment.NewLine}(an existing file was overwritten)" : ""));
         }
     }
 
@@ -138,6 +143,10 @@ public partial class MainWindow
             BindQuarantine();
             AppendSection("QUARANTINE");
             AppendLine($"{entry.OriginalName} permanently deleted.");
+            AddHistory("Quarantine action", entry.OriginalPath, "", "removed",
+                $"Permanently removed from quarantine.{Environment.NewLine}" +
+                $"File: {entry.OriginalName}{Environment.NewLine}" +
+                $"Original path: {entry.OriginalPath}");
         }
         else
         {

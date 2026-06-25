@@ -23,6 +23,9 @@ public partial class UpdateCheckWindow : Window
     private readonly string _clamHubVersion;
     private readonly string _clamAvEngine;
     private string? _clamHubUrl;
+    private GitHubReleaseClient.ReleaseAsset? _clamHubAsset;
+    private bool _clamHubIsZip;
+    private bool _clamHubUpgrade;
     private GitHubReleaseClient.ReleaseAsset? _clamAvAsset;
     private CancellationTokenSource? _downloadCts;
     private bool _busy;
@@ -52,6 +55,8 @@ public partial class UpdateCheckWindow : Window
         SetBusy(true, "Checking GitHub for the latest releases...");
         ClamHubInstalled.Text = $"Installed: {_clamHubVersion}";
         ClamAvInstalled.Text = $"Installed: {_clamAvEngine}";
+        if (_clamAvEngine != "not installed" && !UpdateManager.DatabasesPresent())
+            ClamAvInstalled.Text += " - no signature database yet";
         ClamHubLatest.Text = "Latest: checking...";
         ClamAvLatest.Text = "Latest: checking...";
 
@@ -59,45 +64,142 @@ public partial class UpdateCheckWindow : Window
         var clamAvTask = GitHubReleaseClient.GetLatestReleaseAsync(ClamAvOwner, ClamAvRepo);
         await Task.WhenAll(clamHubTask, clamAvTask);
 
-        ApplyClamHub(clamHubTask.Result);
-        ApplyClamAv(clamAvTask.Result);
+        ApplyClamHub(clamHubTask.Result.Release, clamHubTask.Result.Reached);
+        ApplyClamAv(clamAvTask.Result.Release, clamAvTask.Result.Reached);
         SetBusy(false, "");
     }
 
-    /// <summary>Fills the ClamHub card. Called from: CheckAsync.</summary>
-    private void ApplyClamHub(GitHubReleaseClient.ReleaseInfo? release)
+    /// <summary>
+    /// Fills the ClamHub card. When the latest release is newer than the running
+    /// version and ships a Windows asset, the button becomes "Upgrade"; otherwise it
+    /// stays "Release page". Called from: CheckAsync.
+    /// </summary>
+    private void ApplyClamHub(GitHubReleaseClient.ReleaseInfo? release, bool reached)
     {
+        _clamHubUrl = null;
+        _clamHubAsset = null;
+        _clamHubUpgrade = false;
+        ClamHubButton.Content = "Release page";
+        ClamHubButton.IsEnabled = false;
+        if (!reached)
+        {
+            ClamHubLatest.Text = "Latest: could not reach GitHub.";
+            return;
+        }
         if (release == null)
         {
             ClamHubLatest.Text = "Latest: not available (repository is private or has no release).";
-            _clamHubUrl = null;
-            ClamHubButton.IsEnabled = false;
             return;
         }
-        ClamHubLatest.Text = $"Latest: {Describe(release)}";
+
         _clamHubUrl = string.IsNullOrWhiteSpace(release.HtmlUrl) ? null : release.HtmlUrl;
+        var installedVer = ParseVersion(_clamHubVersion);
+        var latestVer = ParseVersion(release.Tag) ?? ParseVersion(release.Name);
+        var asset = GitHubReleaseClient.FindClamHubWindowsAsset(release.Assets);
+
+        if (asset != null && installedVer != null && latestVer != null && latestVer > installedVer)
+        {
+            _clamHubAsset = asset.Value.Asset;
+            _clamHubIsZip = asset.Value.IsZip;
+            _clamHubUpgrade = true;
+            ClamHubLatest.Text = $"Latest: {Describe(release)} - update available: {installedVer} -> {latestVer}.";
+            ClamHubButton.Content = "Upgrade";
+            ClamHubButton.IsEnabled = true;
+            return;
+        }
+
+        string text = $"Latest: {Describe(release)}";
+        if (installedVer != null && latestVer != null && installedVer >= latestVer)
+            text += " You are up to date.";
+        ClamHubLatest.Text = text;
         ClamHubButton.IsEnabled = _clamHubUrl != null;
     }
 
-    /// <summary>Fills the ClamAV card and locates the portable x64 zip. Called from: CheckAsync.</summary>
-    private void ApplyClamAv(GitHubReleaseClient.ReleaseInfo? release)
+    /// <summary>
+    /// Fills the ClamAV card: locates the portable x64 zip, compares the installed
+    /// engine version against the latest release, and picks a fitting button label
+    /// (Download & set up / Install locally / Update / Reinstall) and hint text for
+    /// each situation. Called from: CheckAsync.
+    /// </summary>
+    private void ApplyClamAv(GitHubReleaseClient.ReleaseInfo? release, bool reached)
     {
-        if (release == null)
+        _clamAvAsset = null;
+        ClamAvButton.IsEnabled = false;
+        if (!reached)
         {
-            ClamAvLatest.Text = "Latest: not available (could not reach GitHub).";
-            _clamAvAsset = null;
-            ClamAvButton.IsEnabled = false;
+            ClamAvLatest.Text = "Latest: could not reach GitHub.";
             return;
         }
+        if (release == null)
+        {
+            ClamAvLatest.Text = "Latest: no release found on GitHub.";
+            return;
+        }
+
+        string latestLabel = Describe(release);
         _clamAvAsset = GitHubReleaseClient.FindWindowsX64Zip(release.Assets);
         if (_clamAvAsset == null)
         {
-            ClamAvLatest.Text = $"Latest: {Describe(release)} - no Windows x64 package in this release.";
-            ClamAvButton.IsEnabled = false;
+            ClamAvLatest.Text = $"Latest: {latestLabel} - no Windows x64 package in this release.";
             return;
         }
-        ClamAvLatest.Text = $"Latest: {Describe(release)}";
+
+        bool installed = _clamAvEngine != "not installed";
+        bool custom = AppPaths.ClamAvDirIsCustom;
+        var installedVer = ParseVersion(_clamAvEngine);
+        var latestVer = ParseVersion(release.Tag) ?? ParseVersion(release.Name);
+
+        string text = $"Latest: {latestLabel}";
+        string button;
+
+        if (!installed)
+        {
+            button = "Download & set up";
+        }
+        else if (custom)
+        {
+            // ClamAV is used from an external folder: offer to bring it in-house.
+            button = "Install locally";
+            text += "\nCurrently using ClamAV from another folder. This installs it into ClamHub's own folder and uses that copy.";
+            if (installedVer != null && latestVer != null && installedVer == latestVer)
+                text += " Same version, only relocating.";
+        }
+        else if (installedVer == null || latestVer == null)
+        {
+            button = "Reinstall";
+            text += "\nInstalled in ClamHub's folder. Versions could not be compared.";
+        }
+        else if (installedVer < latestVer)
+        {
+            button = "Update";
+            text += $"\nUpdate available: {installedVer} -> {latestVer}.";
+        }
+        else if (installedVer == latestVer)
+        {
+            button = "Reinstall";
+            text += $"\nYou already have the latest version ({installedVer}). No update needed.";
+        }
+        else
+        {
+            button = "Reinstall";
+            text += $"\nYour version ({installedVer}) is newer than the latest release ({latestVer}).";
+        }
+
+        ClamAvLatest.Text = text;
+        ClamAvButton.Content = button;
         ClamAvButton.IsEnabled = true;
+    }
+
+    /// <summary>
+    /// Extracts a comparable version from a string such as "ClamAV 1.5.2" or
+    /// "clamav-1.5.2" (the first dotted number found), or null when there is none.
+    /// Called from: ApplyClamAv.
+    /// </summary>
+    private static Version? ParseVersion(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(text, @"\d+(?:\.\d+)+");
+        return m.Success && Version.TryParse(m.Value, out var v) ? v : null;
     }
 
     /// <summary>Formats "tag (released yyyy-MM-dd)". Called from: ApplyClamHub/ApplyClamAv.</summary>
@@ -110,9 +212,17 @@ public partial class UpdateCheckWindow : Window
             : label;
     }
 
-    /// <summary>Opens the ClamHub release page in the browser. Called from: Release page button.</summary>
-    private void ClamHubRelease_Click(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Either upgrades ClamHub (when a newer release with a Windows asset was found)
+    /// or opens the release page in the browser. Called from: the ClamHub button.
+    /// </summary>
+    private async void ClamHubRelease_Click(object sender, RoutedEventArgs e)
     {
+        if (_clamHubUpgrade && _clamHubAsset != null)
+        {
+            await UpgradeClamHubAsync();
+            return;
+        }
         if (_clamHubUrl == null) return;
         try
         {
@@ -125,6 +235,87 @@ public partial class UpdateCheckWindow : Window
     }
 
     /// <summary>
+    /// Downloads the new ClamHub build (progress + cancel), swaps it in for the
+    /// running exe via SelfUpdater, then relaunches and exits. On any failure the
+    /// current version is kept and a readable message is shown. Called from:
+    /// ClamHubRelease_Click.
+    /// </summary>
+    private async Task UpgradeClamHubAsync()
+    {
+        if (_busy || _clamHubAsset == null) return;
+
+        bool go = new MessageDialog(
+            "Upgrade ClamHub?",
+            "ClamHub will download the new version, replace the current one, and restart.\n\nContinue?",
+            "Continue", "Cancel") { Owner = this }.ShowDialog() == true;
+        if (!go) return;
+
+        var asset = _clamHubAsset;
+        _downloadCts = new CancellationTokenSource();
+        SetBusy(true, $"Preparing {asset.Name}...");
+        CancelButton.Visibility = Visibility.Visible;
+
+        string? staged;
+        try
+        {
+            var token = _downloadCts.Token;
+            staged = await SelfUpdater.PrepareUpdateAsync(
+                asset.DownloadUrl, _clamHubIsZip, asset.Size,
+                msg => Dispatcher.Invoke(() => StatusText.Text = msg),
+                (done, total) => Dispatcher.Invoke(() => ShowProgress(done, total)),
+                token);
+        }
+        finally
+        {
+            CancelButton.Visibility = Visibility.Collapsed;
+            BusyBar.IsIndeterminate = true;
+            _busy = false;
+            BusyBar.Visibility = Visibility.Collapsed;
+            RefreshButton.IsEnabled = true;
+            ClamAvButton.IsEnabled = _clamAvAsset != null;
+        }
+
+        _downloadCts.Dispose();
+        _downloadCts = null;
+
+        if (staged == null)
+        {
+            // PrepareUpdateAsync already set a readable message (cancel/error).
+            ClamHubButton.IsEnabled = true;
+            return;
+        }
+
+        StatusText.Text = "Installing the new version...";
+        var (ok, error) = SelfUpdater.TrySwap(staged);
+        if (!ok)
+        {
+            try { System.IO.File.Delete(staged); } catch { /* leftover staged file */ }
+            StatusText.Text = error ?? "Could not replace the current version.";
+            ClamHubButton.IsEnabled = true;
+            return;
+        }
+
+        // Swap done: start the new exe (which cleans up the old one) and exit.
+        StatusText.Text = "Restarting...";
+        try
+        {
+            SingleInstance.ReleasePrimary();
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = SelfUpdater.CurrentExe,
+                UseShellExecute = true,
+                Arguments = "--finish-update"
+            });
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Could not start the new version: {ex.Message}";
+            return;
+        }
+        Application.Current.Shutdown();
+    }
+
+    /// <summary>
     /// Downloads and unpacks the ClamAV portable zip into the ClamAV folder. Warns
     /// first if a different ClamAV install is currently in use (to avoid two
     /// installations), shows download progress, can be cancelled, and closes the
@@ -134,27 +325,24 @@ public partial class UpdateCheckWindow : Window
     {
         if (_busy || _clamAvAsset == null) return;
 
-        // If a custom ClamAV folder is in use, the download targets ClamHub's own
-        // folder instead; warn so the user does not run two installations.
-        if (AppPaths.ClamAvDirIsCustom)
+        // If ClamAV is used from another folder, this installs a local copy into
+        // ClamHub's own folder instead; confirm and switch the active folder first.
+        bool wasCustom = AppPaths.ClamAvDirIsCustom;
+        if (wasCustom)
         {
             bool go = new MessageDialog(
-                "Switch to ClamHub's own ClamAV?",
+                "Install ClamAV locally?",
                 $"ClamHub is currently using ClamAV at:\n{AppPaths.ClamAvDir}\n\n" +
-                $"Downloading will set up ClamAV in ClamHub's own folder:\n{AppPaths.DefaultClamAvDir}\n\n" +
-                "ClamHub will then use that folder. Your other ClamAV folder stays untouched. Continue?",
+                $"This installs ClamAV into ClamHub's own folder:\n{AppPaths.DefaultClamAvDir}\n\n" +
+                "and uses that copy instead. Your other ClamAV folder stays untouched. Continue?",
                 "Continue", "Cancel") { Owner = this }.ShowDialog() == true;
             if (!go) return;
 
             AppPaths.SetClamAvDir(null); // back to the default folder before installing
             SettingsManager.Current.ClamAvPath = null;
             SettingsManager.Save();
-            try
-            {
-                AppPaths.EnsureDirectories();
-                ConfigManager.EnsureConfigs();
-            }
-            catch { /* configs are re-validated after install */ }
+            try { AppPaths.EnsureDirectories(); }
+            catch { /* the download will surface a write error if the folder is locked */ }
         }
 
         var asset = _clamAvAsset;
@@ -189,6 +377,12 @@ public partial class UpdateCheckWindow : Window
 
         if (ok)
         {
+            // Point the configs at the now-local ClamAV folder when we switched.
+            if (wasCustom)
+            {
+                try { ConfigManager.RebuildAllConfigs(true); }
+                catch { /* the owner re-validates configs after this dialog closes */ }
+            }
             ClamAvWasInstalled = true;
             ClamAvButton.IsEnabled = false;
             StatusText.Text = "ClamAV installed.";
@@ -209,6 +403,11 @@ public partial class UpdateCheckWindow : Window
     /// </summary>
     private void ShowProgress(long downloaded, long? total)
     {
+        if (downloaded < 0) // sentinel: switch to the animated bar (e.g. during extraction)
+        {
+            BusyBar.IsIndeterminate = true;
+            return;
+        }
         double doneMb = downloaded / 1048576.0;
         if (total is > 0)
         {
@@ -254,5 +453,8 @@ public partial class UpdateCheckWindow : Window
     }
 
     /// <summary>Closes the dialog. Called from: the title bar and footer Close buttons.</summary>
+    /// <summary>Minimizes the window. Called from: the title-bar minimize button.</summary>
+    private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 }

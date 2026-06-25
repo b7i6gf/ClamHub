@@ -4,31 +4,38 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using Microsoft.Win32;
+using ClamHub.Core;
+using ClamHub.Models;
 
 namespace ClamHub;
 
 /// <summary>
-/// Dark modal window for building a list of scan targets (files and folders) and
-/// starting a batch scan. It does not run the scan itself: the caller reads
-/// Targets after DialogResult is true and scans them in the main console.
-/// Opened from: MainWindow Scan tab "Queue..." button.
+/// Dark modal window for managing the scan queue (files and folders) and saved
+/// named queues. It does not run the scan itself: the caller reads Targets after
+/// the window closes (always current) and, if ScanRequested is set, scans them.
+/// Opened from: MainWindow Scan tab "Queue" button.
 /// </summary>
 public partial class ScanQueueWindow : Window
 {
-    /// <summary>The queued target paths, valid only when DialogResult is true.</summary>
-    public List<string> Targets { get; private set; } = new();
+    /// <summary>The queued target paths as they currently stand (always up to date).</summary>
+    public List<string> Targets => TargetList.Items.Cast<string>().ToList();
+
+    /// <summary>True when the user pressed "Scan all" (the caller then runs the queue).</summary>
+    public bool ScanRequested { get; private set; }
 
     public ScanQueueWindow(IEnumerable<string>? initial = null)
     {
         InitializeComponent();
         if (initial != null)
             foreach (var p in initial) AddTarget(p);
+        QueueProfileManager.Load();
+        RefreshQueueProfileCombo();
         UpdateStatus();
     }
 
     /// <summary>
     /// Adds one path to the list if it exists and is not already present.
-    /// Called from: the constructor, the add buttons and drag and drop.
+    /// Called from: the constructor, the add buttons, drag and drop, profile load.
     /// </summary>
     private void AddTarget(string raw)
     {
@@ -102,9 +109,93 @@ public partial class ScanQueueWindow : Window
         foreach (var p in (string[])e.Data.GetData(DataFormats.FileDrop)) AddTarget(p);
     }
 
+    /// <summary>Reloads the saved-queue combo from QueueProfileManager. Called from: ctor and save/delete.</summary>
+    private void RefreshQueueProfileCombo()
+    {
+        string? selected = QueueProfileCombo.SelectedItem as string;
+        QueueProfileCombo.Items.Clear();
+        foreach (var p in QueueProfileManager.Profiles)
+            QueueProfileCombo.Items.Add(p.Name);
+        if (selected != null && QueueProfileCombo.Items.Contains(selected))
+            QueueProfileCombo.SelectedItem = selected;
+    }
+
     /// <summary>
-    /// Captures the queued targets and closes positively so the caller can scan
-    /// them. Called from: Scan all button.
+    /// Saves the current queue under the typed name (or the selected one when the
+    /// name box is empty). Called from: Save queue button.
+    /// </summary>
+    private void SaveQueueProfile_Click(object sender, RoutedEventArgs e)
+    {
+        string name = QueueProfileNameBox.Text.Trim();
+        if (name.Length == 0) name = QueueProfileCombo.SelectedItem as string ?? "";
+        if (name.Length == 0)
+        {
+            StatusText.Text = "Enter a name to save the queue under.";
+            return;
+        }
+        if (TargetList.Items.Count == 0)
+        {
+            StatusText.Text = "Add at least one target before saving.";
+            return;
+        }
+        QueueProfileManager.AddOrUpdate(new QueueProfile
+        {
+            Name = name,
+            Paths = TargetList.Items.Cast<string>().ToList()
+        });
+        QueueProfileNameBox.Clear();
+        RefreshQueueProfileCombo();
+        QueueProfileCombo.SelectedItem = name;
+        StatusText.Text = $"Saved queue \"{name}\".";
+    }
+
+    /// <summary>
+    /// Replaces the current queue with the selected saved queue, skipping paths
+    /// that no longer exist. Called from: Load button.
+    /// </summary>
+    private void LoadQueueProfile_Click(object sender, RoutedEventArgs e)
+    {
+        if (QueueProfileCombo.SelectedItem is not string name)
+        {
+            StatusText.Text = "Select a saved queue to load.";
+            return;
+        }
+        var profile = QueueProfileManager.Profiles.FirstOrDefault(p =>
+            p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (profile == null) return;
+
+        TargetList.Items.Clear();
+        int skipped = 0;
+        foreach (var p in profile.Paths)
+        {
+            int before = TargetList.Items.Count;
+            AddTarget(p);
+            if (TargetList.Items.Count == before) skipped++;
+        }
+        UpdateStatus();
+        StatusText.Text = skipped > 0
+            ? $"Loaded \"{name}\" ({skipped} missing path(s) skipped)."
+            : $"Loaded \"{name}\".";
+    }
+
+    /// <summary>Deletes the selected saved queue. Called from: Delete button.</summary>
+    private void DeleteQueueProfile_Click(object sender, RoutedEventArgs e)
+    {
+        if (QueueProfileCombo.SelectedItem is not string name)
+        {
+            StatusText.Text = "Select a saved queue to delete.";
+            return;
+        }
+        if (QueueProfileManager.Delete(name))
+        {
+            RefreshQueueProfileCombo();
+            StatusText.Text = $"Deleted queue \"{name}\".";
+        }
+    }
+
+    /// <summary>
+    /// Flags that the queue should be scanned and closes; the caller reads Targets
+    /// and ScanRequested. Called from: Scan all button.
     /// </summary>
     private void ScanAll_Click(object sender, RoutedEventArgs e)
     {
@@ -113,15 +204,10 @@ public partial class ScanQueueWindow : Window
             StatusText.Text = "Add at least one file or folder first.";
             return;
         }
-        Targets = TargetList.Items.Cast<string>().ToList();
-        DialogResult = true;
+        ScanRequested = true;
         Close();
     }
 
-    /// <summary>Closes without scanning. Called from: Close and the title-bar close button.</summary>
-    private void Close_Click(object sender, RoutedEventArgs e)
-    {
-        DialogResult = false;
-        Close();
-    }
+    /// <summary>Closes the window (edits are kept by the caller). Called from: Close buttons.</summary>
+    private void Close_Click(object sender, RoutedEventArgs e) => Close();
 }

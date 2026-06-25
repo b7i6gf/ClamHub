@@ -44,6 +44,26 @@ public static class ConsoleFormatting
     public static void Clear(RichTextBox box) => box.Document.Blocks.Clear();
 
     /// <summary>
+    /// Drops the oldest 'count' lines from the front of the single console paragraph
+    /// to keep the document bounded (lines are separated by LineBreaks, so removing
+    /// 'count' line breaks removes 'count' lines). Called from: MainWindow.TrimConsole
+    /// and ConsoleWindow.RemoveLeadingLines.
+    /// </summary>
+    public static void RemoveLeadingLines(RichTextBox box, int count)
+    {
+        if (count <= 0) return;
+        if (box.Document.Blocks.LastBlock is not Paragraph para) return;
+        var inlines = para.Inlines;
+        int breaksRemoved = 0;
+        while (breaksRemoved < count && inlines.FirstInline is { } first)
+        {
+            bool isBreak = first is LineBreak;
+            inlines.Remove(first);
+            if (isBreak) breaksRemoved++;
+        }
+    }
+
+    /// <summary>
     /// Rebuilds the document from a list of lines, used to seed the separate window
     /// with the output collected so far. Called from: ConsoleWindow.SetLines.
     /// </summary>

@@ -38,8 +38,18 @@ public static class AppPaths
             ? null
             : path!.TrimEnd(Path.DirectorySeparatorChar);
 
-    /// <summary>True when ClamAvDir was repointed away from the default location.</summary>
-    public static bool ClamAvDirIsCustom => _clamAvDir != null;
+    /// <summary>
+    /// True only when the active ClamAV folder resolves to a DIFFERENT path than the
+    /// default BaseDir\ClamAV. Pointing the override at the default folder (e.g. the
+    /// user copied ClamAV into the local folder and selected it) is NOT custom, so
+    /// the update window shows "Reinstall" instead of "Install locally".
+    /// </summary>
+    public static bool ClamAvDirIsCustom =>
+        _clamAvDir != null
+        && !string.Equals(
+            Path.GetFullPath(_clamAvDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            Path.GetFullPath(DefaultClamAvDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// True when the folder contains every required ClamAV executable. Used to
@@ -77,6 +87,7 @@ public static class AppPaths
     // GUI settings and log outputs
     public static string SettingsFile => Path.Combine(BaseDir, "settings.json");
     public static string ProfilesFile => Path.Combine(BaseDir, "profiles.json");
+    public static string QueueProfilesFile => Path.Combine(BaseDir, "queues.json");
     public static string HistoryFile => Path.Combine(LogsDir, "history.json");
     public static string QuarantineIndexFile => Path.Combine(QuarantineDir, "quarantine.json");
     public static string ScanLogFile => Path.Combine(LogsDir, "clamd-scan.log");

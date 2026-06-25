@@ -192,6 +192,12 @@ public static class ConfigManager
             if (!string.IsNullOrEmpty(clean))
                 result.Add($"ExcludePath {ScanEngine.ExtensionRegex(clean)}");
         }
+        foreach (var file in SettingsManager.Current.ExcludeFiles)
+        {
+            var trimmed = file?.Trim();
+            if (!string.IsNullOrEmpty(trimmed))
+                result.Add($"ExcludePath {EscapeRegexPath(trimmed)}$");
+        }
         return result;
     }
 

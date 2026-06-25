@@ -33,18 +33,19 @@ public static class GitHubReleaseClient
     }
 
     /// <summary>
-    /// Fetches the latest release for owner/repo. Returns null when the repo is
-    /// private/unauthorized (404) or on any network/parse error, so callers show
-    /// "not available" instead of failing. Called from: UpdateCheckWindow.
+    /// Fetches the latest release for owner/repo. Returns (Release, Reached): Reached
+    /// is false only on a network/parse error; a 404 (private repo or no release)
+    /// returns (null, true) so callers can tell "could not reach GitHub" apart from
+    /// "no release available". Called from: UpdateCheckWindow.
     /// </summary>
-    public static async Task<ReleaseInfo?> GetLatestReleaseAsync(string owner, string repo,
+    public static async Task<(ReleaseInfo? Release, bool Reached)> GetLatestReleaseAsync(string owner, string repo,
         CancellationToken cancel = default)
     {
         try
         {
             var url = $"https://api.github.com/repos/{owner}/{repo}/releases/latest";
             using var resp = await Http.GetAsync(url, cancel);
-            if (!resp.IsSuccessStatusCode) return null;
+            if (!resp.IsSuccessStatusCode) return (null, true); // reached GitHub, no usable release
 
             var json = await resp.Content.ReadAsStringAsync(cancel);
             using var doc = JsonDocument.Parse(json);
@@ -72,11 +73,11 @@ public static class GitHubReleaseClient
                 }
             }
 
-            return new ReleaseInfo(tag, name, published, htmlUrl, assets);
+            return (new ReleaseInfo(tag, name, published, htmlUrl, assets), true);
         }
         catch
         {
-            return null;
+            return (null, false); // could not reach GitHub
         }
     }
 
@@ -100,4 +101,18 @@ public static class GitHubReleaseClient
                 && (lower.Contains("x64") || lower.Contains("win64"))
                 && !lower.Contains("debug");
         });
+
+    /// <summary>
+    /// Picks the ClamHub Windows asset for a self-upgrade: prefers a bare .exe,
+    /// otherwise a Windows x64 .zip (the .exe is extracted from it). Returns the
+    /// asset and whether it is a zip, or null when none matches. Called from:
+    /// UpdateCheckWindow before upgrading ClamHub.
+    /// </summary>
+    public static (ReleaseAsset Asset, bool IsZip)? FindClamHubWindowsAsset(IReadOnlyList<ReleaseAsset> assets)
+    {
+        var exe = assets.FirstOrDefault(a => a.Name.ToLowerInvariant().EndsWith(".exe"));
+        if (exe != null) return (exe, false);
+        var zip = FindWindowsX64Zip(assets);
+        return zip != null ? (zip, true) : null;
+    }
 }

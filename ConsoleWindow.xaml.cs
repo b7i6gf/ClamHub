@@ -22,12 +22,23 @@ public partial class ConsoleWindow : Window
         InitializeComponent();
     }
 
-    /// <summary>Seeds the window with the output collected so far (URLs clickable).
-    /// Called from: MainWindow.OpenConsoleWindow.</summary>
-    public void SetLines(IEnumerable<string> lines) => ConsoleFormatting.SetLines(ConsoleBox, lines);
+    /// <summary>Seeds the window with the output collected so far (URLs clickable),
+    /// then scrolls to the latest line. Called from: MainWindow.OpenConsoleWindow.</summary>
+    public void SetLines(IEnumerable<string> lines)
+    {
+        ConsoleFormatting.SetLines(ConsoleBox, lines);
+        // Scroll to the newest output once the box has laid out, so the separate
+        // window opens where the dock was (at the bottom) instead of at the top.
+        Dispatcher.BeginInvoke(new Action(() => ConsoleBox.ScrollToEnd()),
+            System.Windows.Threading.DispatcherPriority.Loaded);
+    }
 
     /// <summary>Appends one line (URLs become clickable). Called from: MainWindow.AppendLine.</summary>
     public void AppendLine(string line) => ConsoleFormatting.AppendLine(ConsoleBox, line);
+
+    /// <summary>Drops the oldest 'count' lines to stay in sync with the main console's
+    /// character cap. Called from: MainWindow.TrimConsole.</summary>
+    public void RemoveLeadingLines(int count) => ConsoleFormatting.RemoveLeadingLines(ConsoleBox, count);
 
     /// <summary>Clears the output. Called from: MainWindow when the console is cleared.</summary>
     public void Clear() => ConsoleFormatting.Clear(ConsoleBox);
