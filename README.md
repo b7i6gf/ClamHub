@@ -141,5 +141,4 @@ publish.cmd         # portable single-file release into .\publish
 
 ## Future
 
-- ClamHub is in active development. Expect multiple updates over the first few months! One feature that's currently missing is the sigtool.exe form ClamAV I really want to look into a bit more before I implement it into ClamHub.
-- 
+- ClamHub is in active development. Expect multiple QoL and feature updates over the first few months! One feature that's currently missing is the sigtool.exe form ClamAV I really want to look into a bit more before I implement it into ClamHub.
