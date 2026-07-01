@@ -29,6 +29,10 @@ public partial class App : Application
     /// </summary>
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Install crash handlers before anything else so an unexpected exception is
+        // logged (and, on the UI thread, shown) instead of silently killing the app.
+        InstallGlobalExceptionHandlers();
+
         ParseArguments(e.Args);
 
         // Remove a leftover "<name>.old.exe" from a previous self-upgrade, in the
@@ -115,6 +119,72 @@ public partial class App : Application
     {
         DaemonController.KillAllOwned();
         base.OnExit(e);
+    }
+
+    /// <summary>
+    /// Installs process-wide handlers so an unexpected exception is logged and (for a
+    /// UI-thread error) shown in a dialog instead of crashing the whole app. Called
+    /// from: OnStartup (first thing).
+    /// </summary>
+    private void InstallGlobalExceptionHandlers()
+    {
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+    }
+
+    /// <summary>
+    /// UI-thread exceptions: log, tell the user the action was stopped, and keep the
+    /// app running (the failed operation is abandoned). Called by: the WPF dispatcher.
+    /// </summary>
+    private void OnDispatcherUnhandledException(
+        object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        LogCrash("UI", e.Exception);
+        try
+        {
+            new MessageDialog(
+                "ClamHub - unexpected error",
+                "Something went wrong and the last action was stopped. "
+                + "The application will keep running.\n\n" + e.Exception.Message,
+                "OK", null).ShowDialog();
+        }
+        catch { /* never let the error dialog itself bring the app down */ }
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Background task exceptions: log and mark observed so they cannot tear the
+    /// process down later. Called by: the task scheduler.
+    /// </summary>
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        LogCrash("Task", e.Exception);
+        e.SetObserved();
+    }
+
+    /// <summary>
+    /// Last-resort handler for otherwise fatal exceptions; only logs, since the
+    /// process is already going down. Called by: the runtime.
+    /// </summary>
+    private void OnDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        if (e.ExceptionObject is Exception ex) LogCrash("Fatal", ex);
+    }
+
+    /// <summary>
+    /// Appends one entry to crash.log next to the app. Best effort: logging must
+    /// never throw. Called from: the global exception handlers.
+    /// </summary>
+    private static void LogCrash(string source, Exception ex)
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(AppPaths.LogsDir, "crash.log");
+            System.IO.File.AppendAllText(path,
+                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {source}: {ex}\n\n");
+        }
+        catch { /* logging must never throw */ }
     }
 
     /// <summary>

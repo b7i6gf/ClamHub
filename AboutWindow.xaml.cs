@@ -24,7 +24,7 @@ public partial class AboutWindow : Window
 
         // App version comes from the assembly so it stays in sync with the csproj.
         var asm = Assembly.GetExecutingAssembly().GetName().Version;
-        string appVersion = asm != null ? $"{asm.Major}.{asm.Minor}.{asm.Build}" : "1.0.0";
+        string appVersion = asm != null ? $"{asm.Major}.{asm.Minor}.{asm.Build}" : "1.0.1";
 
         HeaderVersionLine.Text = $"App Version {appVersion}     |     {info?.Engine ?? "ClamAV not found"}";
 

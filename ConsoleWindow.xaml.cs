@@ -36,6 +36,12 @@ public partial class ConsoleWindow : Window
     /// <summary>Appends one line (URLs become clickable). Called from: MainWindow.AppendLine.</summary>
     public void AppendLine(string line) => ConsoleFormatting.AppendLine(ConsoleBox, line);
 
+    /// <summary>Appends one line without scrolling, for batched flushes. Called from: MainWindow.FlushConsole.</summary>
+    public void AppendLineNoScroll(string line) => ConsoleFormatting.AppendLineNoScroll(ConsoleBox, line);
+
+    /// <summary>Scrolls the mirror console to the end once after a batch. Called from: MainWindow.FlushConsole.</summary>
+    public void ScrollToEnd() => ConsoleBox.ScrollToEnd();
+
     /// <summary>Drops the oldest 'count' lines to stay in sync with the main console's
     /// character cap. Called from: MainWindow.TrimConsole.</summary>
     public void RemoveLeadingLines(int count) => ConsoleFormatting.RemoveLeadingLines(ConsoleBox, count);

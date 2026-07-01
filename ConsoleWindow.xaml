@@ -53,8 +53,9 @@
             <!-- Console output -->
             <RichTextBox Grid.Row="1" x:Name="ConsoleBox" IsReadOnly="True" IsDocumentEnabled="True"
                          IsUndoEnabled="False"
+                         TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="Grayscale"
                          Background="#FF17181C" Foreground="#FFD6D6D6" BorderThickness="0"
-                         FontFamily="Consolas" FontSize="12" Padding="8"
+                         FontFamily="Consolas" FontSize="12.5" Padding="8"
                          VerticalScrollBarVisibility="Auto"
                          HorizontalScrollBarVisibility="Disabled">
                 <FlowDocument PagePadding="0"/>

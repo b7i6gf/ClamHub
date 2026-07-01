@@ -194,7 +194,7 @@ public partial class MainWindow
     /// list. Queue runs are recorded separately as one combined entry.
     /// Called from: ScanOneAsync (when record is true).
     /// </summary>
-    private void RecordScan(ScanEngine.ScanOptions options, ScanEngine.ScanResult result,
+    private async Task RecordScan(ScanEngine.ScanOptions options, ScanEngine.ScanResult result,
                             TimeSpan duration, DateTime startedAt)
     {
         bool memory = options.Mode == ScanEngine.ScanMode.Memory;
@@ -241,7 +241,9 @@ public partial class MainWindow
         // For an only-extensions scan, list the files that were actually covered.
         if (!memory && options.IncludeExtensions is { Count: > 0 } incExt)
         {
-            var scanned = MatchedFiles(target, incExt);
+            // Enumerating a large folder again can take a moment, so keep it off the
+            // UI thread to avoid freezing the window while the history entry is built.
+            var scanned = await Task.Run(() => MatchedFiles(target, incExt));
             sb.AppendLine();
             sb.AppendLine($"Scanned objects ({scanned.Count}):");
             const int cap = 1000;
@@ -268,7 +270,7 @@ public partial class MainWindow
     /// start/end, every target with its result, and the aggregate. Called from:
     /// MainWindow.RunQueueScan after the batch finishes.
     /// </summary>
-    private void RecordQueueScan(
+    private async Task RecordQueueScan(
         List<(string Target, ScanEngine.ScanResult Result)> results,
         InfectedFileAction action, IReadOnlyList<string> extensions,
         DateTime startedAt, TimeSpan duration, bool cancelled)
@@ -322,7 +324,7 @@ public partial class MainWindow
             sb.AppendLine("Scanned objects (only-extensions scan):");
             foreach (var (t, _) in results)
             {
-                var matched = MatchedFiles(t, extensions);
+                var matched = await Task.Run(() => MatchedFiles(t, extensions));
                 sb.AppendLine($"  {t} ({matched.Count}):");
                 foreach (var f in matched.Take(perTargetCap)) sb.AppendLine($"    {f}");
                 if (matched.Count > perTargetCap) sb.AppendLine($"    ...and {matched.Count - perTargetCap} more");

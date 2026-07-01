@@ -22,45 +22,46 @@ public static class ConsoleFormatting
         new(@"https?://[^\s]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>
-    /// Appends one line as a new console row. All lines share a single FlowDocument
-    /// paragraph separated by line breaks (cheaper than one paragraph per line), and
-    /// any URL becomes a hyperlink. Scrolls to the end. Called from:
-    /// MainWindow.AppendLine and ConsoleWindow.AppendLine.
+    /// Appends one line as its own console paragraph (any URL becomes a clickable
+    /// hyperlink) and scrolls to the end. Called from: MainWindow.AppendLine and
+    /// ConsoleWindow.AppendLine.
     /// </summary>
     public static void AppendLine(RichTextBox box, string line)
     {
-        if (box.Document.Blocks.LastBlock is not Paragraph para)
-        {
-            para = new Paragraph { Margin = new Thickness(0) };
-            box.Document.Blocks.Add(para);
-        }
-        if (para.Inlines.Count > 0)
-            para.Inlines.Add(new LineBreak());
-        AppendWithLinks(para, line);
+        AppendLineNoScroll(box, line);
         box.ScrollToEnd();
+    }
+
+    /// <summary>
+    /// Same as AppendLine but without the ScrollToEnd, so a whole batch of lines can
+    /// be appended with a single scroll at the end (ScrollToEnd forces a full re-layout,
+    /// which is the dominant cost when many lines arrive in a burst). Each line becomes
+    /// its OWN paragraph (Margin 0): a FlowDocument with many small blocks measures and
+    /// lays out far cheaper for large logs than one giant paragraph full of inlines,
+    /// which is what made switching to a full console stutter. Called from:
+    /// MainWindow.FlushConsole, ConsoleWindow.AppendLineNoScroll and SetLines.
+    /// </summary>
+    public static void AppendLineNoScroll(RichTextBox box, string line)
+    {
+        var para = new Paragraph { Margin = new Thickness(0) };
+        AppendWithLinks(para, line);
+        box.Document.Blocks.Add(para);
     }
 
     /// <summary>Removes all output. Called from: the Clear actions.</summary>
     public static void Clear(RichTextBox box) => box.Document.Blocks.Clear();
 
     /// <summary>
-    /// Drops the oldest 'count' lines from the front of the single console paragraph
-    /// to keep the document bounded (lines are separated by LineBreaks, so removing
-    /// 'count' line breaks removes 'count' lines). Called from: MainWindow.TrimConsole
-    /// and ConsoleWindow.RemoveLeadingLines.
+    /// Drops the oldest 'count' lines from the front of the document. Each line is its
+    /// own paragraph, so this removes the first 'count' blocks. Called from:
+    /// MainWindow.TrimConsole and ConsoleWindow.RemoveLeadingLines.
     /// </summary>
     public static void RemoveLeadingLines(RichTextBox box, int count)
     {
         if (count <= 0) return;
-        if (box.Document.Blocks.LastBlock is not Paragraph para) return;
-        var inlines = para.Inlines;
-        int breaksRemoved = 0;
-        while (breaksRemoved < count && inlines.FirstInline is { } first)
-        {
-            bool isBreak = first is LineBreak;
-            inlines.Remove(first);
-            if (isBreak) breaksRemoved++;
-        }
+        var blocks = box.Document.Blocks;
+        while (count-- > 0 && blocks.FirstBlock is { } first)
+            blocks.Remove(first);
     }
 
     /// <summary>
@@ -70,7 +71,7 @@ public static class ConsoleFormatting
     public static void SetLines(RichTextBox box, IEnumerable<string> lines)
     {
         box.Document.Blocks.Clear();
-        foreach (var l in lines) AppendLine(box, l);
+        foreach (var l in lines) AppendLineNoScroll(box, l);
     }
 
     /// <summary>
@@ -79,6 +80,14 @@ public static class ConsoleFormatting
     /// </summary>
     private static void AppendWithLinks(Paragraph para, string line)
     {
+        // Fast path: the vast majority of log lines contain no URL, so skip the regex
+        // scan entirely and add the line as a single Run. Matters during output floods.
+        if (line.IndexOf("http", StringComparison.OrdinalIgnoreCase) < 0)
+        {
+            para.Inlines.Add(new Run(line));
+            return;
+        }
+
         int pos = 0;
         foreach (Match m in UrlRegex.Matches(line))
         {

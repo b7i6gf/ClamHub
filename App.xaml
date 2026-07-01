@@ -1,6 +1,7 @@
 <Application x:Class="ClamHub.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:ClamHub"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
         <!-- Dark theme palette, used by all windows -->
@@ -54,6 +55,28 @@
         <Style TargetType="TabControl">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <!-- KeepAliveTabControl: same look as the default tabs, but the single
+             selected-content host is replaced by PART_ItemsHolder, which the control
+             fills with one host per tab so tab content is not rebuilt on every switch. -->
+        <Style TargetType="local:KeepAliveTabControl">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="local:KeepAliveTabControl">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <TabPanel x:Name="HeaderPanel" Grid.Row="0" IsItemsHost="True"
+                                      Margin="0" Background="Transparent" Panel.ZIndex="1"/>
+                            <Grid x:Name="PART_ItemsHolder" Grid.Row="1" Margin="0"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style TargetType="TabItem">
             <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>

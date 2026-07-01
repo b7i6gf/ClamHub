@@ -60,17 +60,25 @@ public partial class MainWindow : Window
     /// column cannot be dragged until it disappears. A width watcher on each column
     /// snaps any smaller value back to the minimum. Called from: the constructor.
     /// </summary>
-    private static void ClampColumnWidths(GridView grid, double min)
+    // Shared descriptor + the value-changed watchers registered by ClampColumnWidths.
+    // DependencyPropertyDescriptor.AddValueChanged roots its handlers globally, so the
+    // watchers are detached in Window_Closing to avoid the classic leak pattern.
+    private static readonly DependencyPropertyDescriptor ColumnWidthDescriptor =
+        DependencyPropertyDescriptor.FromProperty(GridViewColumn.WidthProperty, typeof(GridViewColumn));
+    private readonly List<(GridViewColumn column, EventHandler handler)> _columnWidthWatchers = new();
+
+    private void ClampColumnWidths(GridView grid, double min)
     {
-        var descriptor = DependencyPropertyDescriptor.FromProperty(
-            GridViewColumn.WidthProperty, typeof(GridViewColumn));
-        foreach (var column in grid.Columns)
+        foreach (var c in grid.Columns)
         {
-            descriptor.AddValueChanged(column, (_, _) =>
+            var column = c; // capture this iteration's column
+            EventHandler handler = (_, _) =>
             {
                 if (column.Width < min)
                     column.Width = min;
-            });
+            };
+            ColumnWidthDescriptor.AddValueChanged(column, handler);
+            _columnWidthWatchers.Add((column, handler));
         }
     }
 
@@ -154,7 +162,7 @@ public partial class MainWindow : Window
         {
             AdminRestartButton.IsEnabled = false;
             AdminRestartButton.Content = "Admin mode";
-            Title = "ClamHub 1.0.0 (Administrator)";
+            Title = "ClamHub 1.0.1 (Administrator)";
         }
 
         var info = await UpdateManager.GetVersionInfoAsync();
@@ -272,13 +280,19 @@ public partial class MainWindow : Window
     {
         if (_busy) return;
         _busy = true;
-        SetOutputViewSwitchingEnabled(false); // lock output layout mid-scan
+        SetOutputViewSwitchingEnabled(false); // lock only the pop-out toggle mid-scan (bottom/right stay switchable)
         StartDaemonButton.IsEnabled = StopDaemonButton.IsEnabled = false;
         UpdateButton.IsEnabled = ScanButton.IsEnabled = MemoryScanButton.IsEnabled = false;
         ScanVirusTotalButton.IsEnabled = false;
         try
         {
             await action();
+        }
+        catch (Exception ex)
+        {
+            // An operation failed unexpectedly: report it in the console and recover,
+            // rather than letting it bubble up as an unhandled (crashing) exception.
+            AppendLine($"Operation failed: {ex.Message}");
         }
         finally
         {
@@ -295,9 +309,16 @@ public partial class MainWindow : Window
     /// output layout cannot be switched mid-scan while the console is streaming.
     /// Tabs stay usable. Called from: RunGuarded.
     /// </summary>
+    /// <summary>
+    /// Locks/unlocks ONLY the pop-out (Window) output toggle during a scan. Docking
+    /// between bottom and right just repositions the same ConsoleBox in the grid, which
+    /// is safe mid-scan, so those two toggles stay enabled; only opening/closing the
+    /// separate window (which seeds/reparents content) is held until the scan finishes.
+    /// Called from: RunGuarded (disable on start, re-enable in finally).
+    /// </summary>
     private void SetOutputViewSwitchingEnabled(bool enabled)
     {
-        ViewBottom.IsEnabled = ViewRight.IsEnabled = ViewWindow.IsEnabled = enabled;
+        ViewWindow.IsEnabled = enabled;
     }
 
     /// <summary>Start daemon button. Called from: XAML Click binding.</summary>
@@ -442,11 +463,17 @@ public partial class MainWindow : Window
     /// the queue is not empty (the visual indicator). Called from: queue changes
     /// and InitializeAsync.
     /// </summary>
+    // Cached once so UpdateQueueIndicator does not hit FindResource on every change.
+    private System.Windows.Media.Brush? _accentBrush;
+    private System.Windows.Media.Brush? _mutedQueueTextBrush;
+
     private void UpdateQueueIndicator()
     {
         int n = _queue.Count;
         QueueButton.Content = n > 0 ? $"Queue ({n})" : "Queue...";
-        QueueButton.Foreground = (System.Windows.Media.Brush)FindResource(n > 0 ? "AccentBrush" : "TextBrush");
+        _accentBrush ??= (System.Windows.Media.Brush)FindResource("AccentBrush");
+        _mutedQueueTextBrush ??= (System.Windows.Media.Brush)FindResource("TextBrush");
+        QueueButton.Foreground = n > 0 ? _accentBrush : _mutedQueueTextBrush;
     }
 
     /// <summary>
@@ -557,7 +584,7 @@ public partial class MainWindow : Window
 
             // One combined history entry for the whole queue run.
             if (results.Count > 0)
-                RecordQueueScan(results, action, extensions, startedAt, DateTime.Now - startedAt, cancelled);
+                await RecordQueueScan(results, action, extensions, startedAt, DateTime.Now - startedAt, cancelled);
 
             // Clear the queue after a completed (non-cancelled) run.
             if (!cancelled)
@@ -657,7 +684,7 @@ public partial class MainWindow : Window
 
             // Persist the scan into the history tab (suppressed for queued targets,
             // which the queue runner records as one combined entry instead).
-            if (record) RecordScan(options, result, watch.Elapsed, startedAt);
+            if (record) await RecordScan(options, result, watch.Elapsed, startedAt);
 
             // If the user chose Quarantine, move the infected files now.
             // ClamAV scanned report-only (see ScanEngine.AppendAction); the
@@ -945,8 +972,11 @@ public partial class MainWindow : Window
     /// </summary>
     private void ClearConsoleAll()
     {
+        lock (_consoleLock) _pendingLines.Clear();
         _consoleLines.Clear();
         _consoleChars = 0;
+        _mainRenderChars = 0;
+        _mainLineLengths.Clear();
         ConsoleFormatting.Clear(ConsoleBox);
         _consoleWindow?.Clear();
     }
@@ -1198,15 +1228,24 @@ public partial class MainWindow : Window
 
         // Refresh the data tables when their tab is opened so the newest entries
         // always show (also refreshed in the background right after a scan).
-        if (index == 2) BindQuarantine();
-        else if (index == 3) BindHistory();
+        // The data tables refresh themselves on every add/delete (each mutation calls
+        // BindHistory/BindQuarantine), so opening their tab only needs to re-fit the
+        // last column to the now-visible viewport; a full rebind/Refresh here is wasted
+        // work on every switch.
+        if (index == 2) ScheduleFill(QuarantineList, QuarantineGridView);
+        else if (index == 3) ScheduleFill(HistoryList, HistoryGridView);
 
         // Settings (4) and History (3) hide the main output console: Settings uses
         // the full area, History shows its own output console (in the bottom row).
+        // Only redo the console layout when that placement actually changes (e.g. to or
+        // from Settings/History), not on every switch between console-visible tabs.
+        bool newHidden = index == 4 || index == 3;
+        bool newHistory = index == 3;
+        bool layoutChanged = newHidden != _consoleHiddenForTab || newHistory != _onHistoryTab;
         _onSettingsTab = index == 4;
-        _onHistoryTab = index == 3;
-        _consoleHiddenForTab = index == 4 || index == 3;
-        ApplyConsoleLayout();
+        _onHistoryTab = newHistory;
+        _consoleHiddenForTab = newHidden;
+        if (layoutChanged) ApplyConsoleLayout();
 
         // On the Settings tab, show a small "(running...)" note by the clamd header.
         if (_onSettingsTab)
@@ -1233,6 +1272,19 @@ public partial class MainWindow : Window
     /// <summary>Raw console lines, kept so the separate window can be seeded and so
     /// AppendSection can tell whether the console already has content.</summary>
     private readonly List<string> _consoleLines = new();
+
+    // Producer/consumer buffer that decouples log producers (scan output arrives on
+    // background threads) from the UI: AppendLine only enqueues here, and a single
+    // scheduled FlushConsole drains the whole buffer at once. This replaces the old
+    // per-line synchronous Dispatcher.Invoke + per-line ScrollToEnd, which relaid out
+    // the RichTextBox on every line and was the main cause of scan-time UI lag.
+    private readonly object _consoleLock = new();
+    private readonly List<string> _pendingLines = new();
+    private bool _flushScheduled;
+    // Hard cap on buffered-but-not-yet-rendered lines. Under an output flood (e.g. a
+    // full freshclam/clamscan dump faster than the UI can draw) the oldest pending
+    // lines are dropped; they would be trimmed off screen almost immediately anyway.
+    private const int MaxPendingLines = 5000;
     private bool _applyingConsoleView;
 
     // Console geometry when docked on the right. The main area keeps a FIXED width
@@ -1607,7 +1659,7 @@ public partial class MainWindow : Window
     private async Task ShowUpdateCheckAsync()
     {
         var asm = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        string appVersion = asm != null ? $"{asm.Major}.{asm.Minor}.{asm.Build}" : "1.0.0";
+        string appVersion = asm != null ? $"{asm.Major}.{asm.Minor}.{asm.Build}" : "1.0.1";
 
         var dialog = new UpdateCheckWindow(appVersion, _versionInfo?.Engine) { Owner = this };
         dialog.ShowDialog();
@@ -1801,44 +1853,112 @@ public partial class MainWindow : Window
     /// Appends a line to the console box, thread safe for process output events.
     /// Called from: all Core modules via callback parameters.
     /// </summary>
+    /// <summary>
+    /// Queues one line for the console. Thread-safe: callable from any thread (scan
+    /// output runs on background threads). The line is buffered and a single flush is
+    /// scheduled on the UI thread; it does not render synchronously. Called from:
+    /// every place that writes to the output console.
+    /// </summary>
     private void AppendLine(string line)
     {
-        Dispatcher.Invoke(() =>
+        bool schedule = false;
+        lock (_consoleLock)
         {
-            _consoleLines.Add(line);
-            _consoleChars += line.Length + 1;
-            ConsoleFormatting.AppendLine(ConsoleBox, line);
-            _consoleWindow?.AppendLine(line);
-            TrimConsole();
-        });
+            _pendingLines.Add(line);
+            if (_pendingLines.Count > MaxPendingLines)
+                _pendingLines.RemoveRange(0, _pendingLines.Count - MaxPendingLines);
+            if (!_flushScheduled) { _flushScheduled = true; schedule = true; }
+        }
+        if (schedule)
+            Dispatcher.BeginInvoke(new Action(FlushConsole),
+                System.Windows.Threading.DispatcherPriority.Background);
     }
 
-    // Upper bound on console text. A full clamconf diagnostics dump is only a few tens
-    // of KB, so this keeps many of them while preventing the unbounded growth that
-    // slows the RichTextBox down. When exceeded, the oldest lines are dropped.
-    private const int MaxConsoleChars = 200_000;
-    private int _consoleChars;
+    /// <summary>
+    /// Drains the pending-line buffer and renders the whole batch with a single
+    /// ScrollToEnd and a single trim. Runs on the UI thread. Called from: AppendLine
+    /// (via a scheduled dispatcher callback).
+    /// </summary>
+    private void FlushConsole()
+    {
+        string[] batch;
+        lock (_consoleLock)
+        {
+            _flushScheduled = false;
+            if (_pendingLines.Count == 0) return;
+            batch = _pendingLines.ToArray();
+            _pendingLines.Clear();
+        }
+        foreach (var line in batch)
+        {
+            _consoleLines.Add(line);
+            int len = line.Length + 1;
+            _consoleChars += len;        // full history (kept in _consoleLines + pop-out)
+            _mainRenderChars += len;     // only what the main box actually renders
+            _mainLineLengths.Enqueue(len);
+            ConsoleFormatting.AppendLineNoScroll(ConsoleBox, line);
+            _consoleWindow?.AppendLineNoScroll(line);
+        }
+        ConsoleBox.ScrollToEnd();
+        _consoleWindow?.ScrollToEnd();
+        TrimConsole();
+    }
+
+    /// <summary>True if the console shows or has buffered any content. Called from: AppendSection.</summary>
+    private bool ConsoleHasContent()
+    {
+        if (_consoleLines.Count > 0) return true;
+        lock (_consoleLock) return _pendingLines.Count > 0;
+    }
+
+    // The FULL scroll-back is kept in _consoleLines (plain strings, cheap) so nothing
+    // the user produced is lost. Only the last MaxRenderChars are RENDERED into the
+    // main ConsoleBox, which is what keeps switching tabs cheap when the log is huge.
+    // The pop-out console window mirrors the full history (a "full log" viewer opened
+    // on demand). MaxHistoryChars only bounds memory in a pathological session; it is
+    // far above the render cap, so normal use keeps the complete scroll-back.
+    private const int MaxRenderChars = 15_000;
+    private const int MaxHistoryChars = 750_000;
+    private int _consoleChars;                            // chars in _consoleLines (full history + pop-out)
+    private int _mainRenderChars;                         // chars currently rendered in the main ConsoleBox
+    private readonly Queue<int> _mainLineLengths = new(); // per-line lengths of what the main box renders
 
     /// <summary>
-    /// Drops the oldest lines from both console views once the text passes
-    /// MaxConsoleChars, trimming down to ~85% so it does not run on every append.
-    /// Called from: AppendLine.
+    /// Keeps the console bounded on two levels: the MAIN ConsoleBox renders only the
+    /// last MaxRenderChars (so switching tabs stays cheap even with a huge log), while
+    /// the full history in _consoleLines and the pop-out window are only capped at the
+    /// much larger MaxHistoryChars (a memory safety net). Trims to ~85% so it does not
+    /// run on every append. Called from: FlushConsole.
     /// </summary>
     private void TrimConsole()
     {
-        if (_consoleChars <= MaxConsoleChars) return;
-        int target = MaxConsoleChars * 85 / 100;
-        int removed = 0;
-        while (_consoleChars > target && _consoleLines.Count > 1)
+        // 1. Keep the main rendered box small (this is the tab-switch cost).
+        if (_mainRenderChars > MaxRenderChars)
         {
-            _consoleChars -= _consoleLines[0].Length + 1;
-            _consoleLines.RemoveAt(0);
-            removed++;
+            int target = MaxRenderChars * 85 / 100;
+            int removed = 0;
+            while (_mainRenderChars > target && _mainLineLengths.Count > 1)
+            {
+                _mainRenderChars -= _mainLineLengths.Dequeue();
+                removed++;
+            }
+            if (removed > 0)
+                ConsoleFormatting.RemoveLeadingLines(ConsoleBox, removed);
         }
-        if (removed > 0)
+
+        // 2. Bound the full history (and the pop-out, which mirrors it). Rarely hit.
+        if (_consoleChars > MaxHistoryChars)
         {
-            ConsoleFormatting.RemoveLeadingLines(ConsoleBox, removed);
-            _consoleWindow?.RemoveLeadingLines(removed);
+            int target = MaxHistoryChars * 85 / 100;
+            int removed = 0;
+            while (_consoleChars > target && _consoleLines.Count > 1)
+            {
+                _consoleChars -= _consoleLines[0].Length + 1;
+                _consoleLines.RemoveAt(0);
+                removed++;
+            }
+            if (removed > 0)
+                _consoleWindow?.RemoveLeadingLines(removed);
         }
     }
 
@@ -1849,7 +1969,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void AppendSection(string title)
     {
-        if (_consoleLines.Count > 0) AppendLine("");
+        if (ConsoleHasContent()) AppendLine("");
         AppendLine($"================ {title} | {DateTime.Now:HH:mm:ss} ================");
     }
 
@@ -1879,6 +1999,10 @@ public partial class MainWindow : Window
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
         _scanCts?.Cancel();
+        // Detach the column-width watchers so their handlers are not left rooted.
+        foreach (var (column, handler) in _columnWidthWatchers)
+            ColumnWidthDescriptor.RemoveValueChanged(column, handler);
+        _columnWidthWatchers.Clear();
         CloseConsoleWindow();
         SaveWindowSize();
         DaemonController.KillAllOwned();
