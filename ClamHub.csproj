@@ -15,9 +15,4 @@
          so that normal debug builds stay fast. -->
   </PropertyGroup>
 
-  <ItemGroup>
-    <!-- Ship the icon next to the EXE so the context menu entry can use it. -->
-    <None Include="ClamHub.ico" CopyToOutputDirectory="PreserveNewest"/>
-  </ItemGroup>
-
 </Project>
