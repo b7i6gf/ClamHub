@@ -41,7 +41,7 @@ public static class ConfigSchema
         T("TemporaryDirectory", "Override the temp directory [system temp]."),
 
         Header("File system"),
-        T("ExcludePath", "Paths skipped during daemon scans. Click Manage list to add folders and file extensions (same dialog as the scan Exclusions button)."),
+        T("ExcludePath", "Manage the default list to skip files, folders and extensions during scans w/o daemon."),
         B("CrossFilesystems", "Scan across file system boundaries [yes]."),
         B("FollowDirectorySymlinks", "Follow directory symlinks [no]."),
         B("FollowFileSymlinks", "Follow file symlinks [no]."),

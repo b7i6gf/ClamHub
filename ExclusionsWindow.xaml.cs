@@ -30,9 +30,12 @@ public partial class ExclusionsWindow : Window
     public List<string> ResultExtensions { get; private set; } = new();
 
     public ExclusionsWindow(IEnumerable<string> dirs, IEnumerable<string> files,
-                            IEnumerable<string> exts, string subtitle)
+                            IEnumerable<string> exts, string subtitle,
+                            string windowTitle = "Scan exclusions")
     {
         InitializeComponent();
+        Title = windowTitle;
+        HeaderText.Text = windowTitle;
         SubtitleText.Text = subtitle;
         foreach (var d in dirs) DirList.Items.Add(d);
         foreach (var f in files) FileList.Items.Add(f);
@@ -62,9 +65,9 @@ public partial class ExclusionsWindow : Window
     /// <summary>Adds a folder via the system folder picker. Called from: Add folder button.</summary>
     private void AddFolder_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFolderDialog { Title = "Select a folder to exclude" };
+        var dialog = new OpenFolderDialog { Title = "Select folder(s) to exclude", Multiselect = true };
         if (dialog.ShowDialog(this) != true) return;
-        AddDirToList(dialog.FolderName);
+        foreach (var d in dialog.FolderNames) AddDirToList(d);
     }
 
     /// <summary>Removes the selected directory. Called from: Remove selected button.</summary>
@@ -72,6 +75,9 @@ public partial class ExclusionsWindow : Window
     {
         if (DirList.SelectedItem != null) DirList.Items.Remove(DirList.SelectedItem);
     }
+
+    /// <summary>Clears the whole directory list. Called from: Remove all button.</summary>
+    private void RemoveAllDir_Click(object sender, RoutedEventArgs e) => DirList.Items.Clear();
 
     /// <summary>Adds files via the system picker. Called from: Add file button.</summary>
     private void AddFile_Click(object sender, RoutedEventArgs e)
@@ -86,6 +92,9 @@ public partial class ExclusionsWindow : Window
     {
         if (FileList.SelectedItem != null) FileList.Items.Remove(FileList.SelectedItem);
     }
+
+    /// <summary>Clears the whole file list. Called from: Remove all button.</summary>
+    private void RemoveAllFile_Click(object sender, RoutedEventArgs e) => FileList.Items.Clear();
 
     /// <summary>Shows a copy cursor for file drops. Called from: content PreviewDragOver.</summary>
     private void Content_DragOver(object sender, DragEventArgs e)
@@ -136,11 +145,14 @@ public partial class ExclusionsWindow : Window
         ExtBox.Clear();
     }
 
-    /// <summary>Removes the selected extension. Called from: Remove button.</summary>
+    /// <summary>Removes the selected extension. Called from: Remove selected button.</summary>
     private void RemoveExt_Click(object sender, RoutedEventArgs e)
     {
         if (ExtList.SelectedItem != null) ExtList.Items.Remove(ExtList.SelectedItem);
     }
+
+    /// <summary>Clears the whole extension list. Called from: Remove all button.</summary>
+    private void RemoveAllExt_Click(object sender, RoutedEventArgs e) => ExtList.Items.Clear();
 
     /// <summary>
     /// Captures all three lists into the result properties and closes positively.

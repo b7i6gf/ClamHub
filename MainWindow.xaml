@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:local="clr-namespace:ClamHub"
-        Title="ClamHub 1.0.1" Height="680" Width="1035"
-        MinHeight="680" MinWidth="1035"
+        Title="ClamHub 1.0.2" Height="710" Width="1068"
+        MinHeight="710" MinWidth="1068"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None" ResizeMode="CanResize"
         Background="{StaticResource BgBrush}"
@@ -36,7 +36,7 @@
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center"
                             Margin="14,0,0,0">
                     <TextBlock Text="ClamHub" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <TextBlock Text="1.0.1" FontSize="11" Margin="8,2,0,0"
+                    <TextBlock Text="1.0.2" Margin="8,0,0,0"
                                Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center"/>
                 </StackPanel>
 
@@ -178,13 +178,14 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <!-- Profile row (moved below Target and Action) -->
-                        <Grid Grid.Row="2" Margin="0,0,0,8">
+                        <!-- Profile row (first) -->
+                        <Grid Grid.Row="0" Margin="0,0,0,8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="200"/>
@@ -220,8 +221,8 @@
                                     ToolTip="Removes the selected profile"/>
                         </Grid>
 
-                        <!-- Target row (now first) -->
-                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                        <!-- Target row -->
+                        <Grid Grid.Row="1" Margin="0,0,0,8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
@@ -250,7 +251,14 @@
                                     </TextBlock.Visibility>
                                 </TextBlock>
                             </Grid>
-                            <Button Grid.Column="2" Width="32" Height="30" Padding="0"
+                            <Button Grid.Column="2" Style="{StaticResource GlyphButton}"
+                                    Width="32" Height="30" Margin="6,0,0,0"
+                                    Click="ClearTextBox_Click" Tag="{Binding ElementName=TargetBox}"
+                                    ToolTip="Clear the target">
+                                <Path Data="M0,0 L10,10 M0,10 L10,0"
+                                      Stroke="{StaticResource DangerBrush}" StrokeThickness="1.8"/>
+                            </Button>
+                            <Button Grid.Column="3" Width="32" Height="30" Padding="0"
                                     Margin="8,0,0,0" Click="AddToQueue_Click"
                                     ToolTip="Add this path to the queue (or press Enter in the Target box)">
                                 <Grid Width="12" Height="12">
@@ -260,28 +268,50 @@
                                                HorizontalAlignment="Center" Fill="{StaticResource TextBrush}"/>
                                 </Grid>
                             </Button>
-                            <Button Grid.Column="3" Content="File..." Width="70" Height="30"
-                                    Margin="8,0,0,0" Click="BrowseFile_Click"/>
-                            <Button Grid.Column="4" Content="Folder..." Width="70" Height="30"
-                                    Margin="8,0,0,0" Click="BrowseFolder_Click"/>
+                            <Button Grid.Column="4" x:Name="ScanBrowseButton" Content="File..." Width="70" Height="30"
+                                    Margin="8,0,0,0" Click="ScanBrowse_Click"
+                                    ToolTip="Choose one or more files, or a folder, to scan"/>
                             <Button Grid.Column="5" x:Name="QueueButton" Content="Queue..." Width="90" Height="30"
                                     Margin="8,0,0,0" Click="ScanQueue_Click"
                                     ToolTip="Open the scan queue to manage queued targets and saved queues"/>
+                            <Popup x:Name="ScanBrowsePopup" PlacementTarget="{Binding ElementName=ScanBrowseButton}"
+                                   Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
+                                <Border Background="{StaticResource PanelBrush}" BorderBrush="#FF55585F"
+                                        BorderThickness="1" CornerRadius="4" Padding="4" Margin="0,2,0,0">
+                                    <StackPanel MinWidth="150">
+                                        <Button Content="Choose files..." Height="28" Margin="0,0,0,4"
+                                                Click="ScanChooseFiles_Click"/>
+                                        <Button Content="Choose folder..." Height="28"
+                                                Click="ScanChooseFolder_Click"/>
+                                    </StackPanel>
+                                </Border>
+                            </Popup>
                         </Grid>
 
-                        <!-- Action / options row (now second) -->
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
-                            <TextBlock Text="Action:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox x:Name="ActionCombo" Width="130" Height="28" SelectedIndex="0">
-                                <ComboBoxItem Content="Report only"/>
-                                <ComboBoxItem Content="Quarantine"/>
-                                <ComboBoxItem Content="Remove"/>
-                            </ComboBox>
-                            <TextBlock Text="Only extensions:" VerticalAlignment="Center" Margin="20,0,8,0"
+                        <!-- Combined row -->
+                        <Grid Grid.Row="2" Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Only extensions -->
+                            <TextBlock Grid.Column="0"
+                                       Text="Only extensions:"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,8,0"
                                        ToolTip="Optional, forces clamscan instead of the daemon"/>
-                            <Grid>
-                                <TextBox x:Name="ExtensionsBox" Width="150" Height="28"
+
+                            <Grid Grid.Column="1">
+                                <TextBox x:Name="ExtensionsBox"
+                                         Width="150"
+                                         Height="28"
                                          VerticalContentAlignment="Center"/>
+
                                 <TextBlock Style="{StaticResource PlaceholderText}"
                                            Text="e.g. exe dll sys">
                                     <TextBlock.Visibility>
@@ -293,13 +323,36 @@
                                     </TextBlock.Visibility>
                                 </TextBlock>
                             </Grid>
-                            <Button Content="Exclusions..." Height="28" Margin="20,0,0,0"
+
+                            <Button Grid.Column="2"
+                                    Content="Exclusions"
+                                    Height="28"
+                                    Margin="8,0,0,0"
                                     Click="Exclusions_Click"
-                                    ToolTip="Exclude directories and file extensions from scans"/>
-                        </StackPanel>
+                                    ToolTip="Exclude files, folders and extensions from scans (standalone clamscan)"/>
+
+                            <!-- spacer pushes action to the right -->
+                            <TextBlock Grid.Column="3"/>
+
+                            <!-- Action -->
+                            <TextBlock Grid.Column="4"
+                                       Text="Action:"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,8,0"/>
+
+                            <ComboBox Grid.Column="5"
+                                      x:Name="ActionCombo"
+                                      Width="130"
+                                      Height="28"
+                                      SelectedIndex="0">
+                                <ComboBoxItem Content="Report only"/>
+                                <ComboBoxItem Content="Quarantine"/>
+                                <ComboBoxItem Content="Remove"/>
+                            </ComboBox>
+                        </Grid>
 
                         <!-- Running scan indicator: pulsing bar plus status text -->
-                        <StackPanel Grid.Row="4" x:Name="ScanIndicator" Visibility="Collapsed"
+                        <StackPanel Grid.Row="5" x:Name="ScanIndicator" Visibility="Collapsed"
                                     Margin="0,0,0,10">
                             <ProgressBar IsIndeterminate="True"/>
                             <TextBlock x:Name="ScanIndicatorText" Text="Scan running..."
@@ -309,7 +362,7 @@
 
                         <!-- Scan buttons pinned to the bottom of the card so they
                              line up with the Hash Verifier compute button -->
-                        <Grid Grid.Row="5">
+                        <Grid Grid.Row="6">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
@@ -338,9 +391,15 @@
                                     Click="ScanVirusTotal_Click"
                                     ToolTipService.ShowOnDisabled="True"
                                     ToolTip="Look up the file's SHA256 on VirusTotal. Only the hash is sent, never the file."/>
-                            <Button Grid.Column="5" x:Name="ScanButton" Content="Start scan"
-                                    Width="120" Height="34" FontWeight="SemiBold"
-                                    Click="Scan_Click"/>
+                            <StackPanel Grid.Column="5" Orientation="Horizontal">
+                                <Button x:Name="ScanNoDaemonButton" Content="Scan w/o daemon"
+                                        Width="130" Height="34" Margin="0,0,10,0"
+                                        Click="ScanNoDaemon_Click"
+                                        ToolTip="Scan with standalone clamscan (never the daemon). Required for per-scan exclusions to take effect."/>
+                                <Button x:Name="ScanButton" Content="Start scan"
+                                        Width="120" Height="34" FontWeight="SemiBold"
+                                        Click="Scan_Click"/>
+                            </StackPanel>
                         </Grid>
                     </Grid>
                 </TabItem>
@@ -362,6 +421,7 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="File:" VerticalAlignment="Center"
                                        Margin="0,0,10,0" FontWeight="SemiBold"/>
@@ -382,20 +442,30 @@
                                     </TextBlock.Visibility>
                                 </TextBlock>
                             </Grid>
-                            <Button Grid.Column="2" Content="File..." Width="70" Height="30"
+                            <Button Grid.Column="2" Style="{StaticResource GlyphButton}"
+                                    Width="32" Height="30" Margin="6,0,0,0"
+                                    Click="ClearTextBox_Click" Tag="{Binding ElementName=HashFileBox}"
+                                    ToolTip="Clear the file">
+                                <Path Data="M0,0 L10,10 M0,10 L10,0"
+                                      Stroke="{StaticResource DangerBrush}" StrokeThickness="1.8"/>
+                            </Button>
+                            <Button Grid.Column="3" Content="File..." Width="70" Height="30"
                                     Margin="8,0,0,0" Click="BrowseHashFile_Click"/>
                         </Grid>
 
                         <!-- Algorithm row (now below Expected) -->
                         <StackPanel Grid.Row="2" Orientation="Horizontal">
                             <TextBlock Text="Algorithm:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox x:Name="HashAlgoCombo" Width="110" Height="28" SelectedIndex="5">
-                                <ComboBoxItem Content="SHA256"/>
+                            <ComboBox x:Name="HashAlgoCombo" Width="110" Height="28" SelectedIndex="0">
+                                <ComboBoxItem Content="All"/>
+                                <ComboBoxItem Content="MD5"/>
                                 <ComboBoxItem Content="SHA1"/>
+                                <ComboBoxItem Content="SHA256"/>
                                 <ComboBoxItem Content="SHA384"/>
                                 <ComboBoxItem Content="SHA512"/>
-                                <ComboBoxItem Content="MD5"/>
-                                <ComboBoxItem Content="All"/>
+                                <ComboBoxItem Content="SHA3-256"/>
+                                <ComboBoxItem Content="SHA3-384"/>
+                                <ComboBoxItem Content="SHA3-512"/>
                             </ComboBox>
                         </StackPanel>
 
@@ -404,6 +474,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="Expected (optional):"
                                        VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -421,19 +492,39 @@
                                     </TextBlock.Visibility>
                                 </TextBlock>
                             </Grid>
+                            <Button Grid.Column="2" Style="{StaticResource GlyphButton}"
+                                    Width="32" Height="28" Margin="6,0,0,0"
+                                    Click="ClearTextBox_Click" Tag="{Binding ElementName=ExpectedHashBox}"
+                                    ToolTip="Clear the expected hash">
+                                <Path Data="M0,0 L10,10 M0,10 L10,0"
+                                      Stroke="{StaticResource DangerBrush}" StrokeThickness="1.8"/>
+                            </Button>
                         </Grid>
 
-                        <!-- Action buttons pinned to the bottom-right corner -->
-                        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button x:Name="VirusTotalButton" Content="VirusTotal"
-                                    Width="100" Height="30" Margin="0,0,10,0"
-                                    Click="VirusTotal_Click"
-                                    ToolTipService.ShowOnDisabled="True"
-                                    ToolTip="Look up the file's SHA256 on VirusTotal. Only the hash is sent, never the file."/>
-                            <Button x:Name="ComputeHashButton" Content="Compute"
-                                    Width="100" Height="30" FontWeight="SemiBold"
-                                    Click="ComputeHash_Click"/>
-                        </StackPanel>
+                        <!-- Action row: progress bar (left) shown only while hashing,
+                             buttons pinned bottom-right -->
+                        <Grid Grid.Row="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ProgressBar x:Name="HashProgress" Grid.Column="0" Height="8"
+                                         Minimum="0" Maximum="1" VerticalAlignment="Center"
+                                         Margin="0,0,12,0" Visibility="Collapsed"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button x:Name="CancelHashButton" Content="Cancel"
+                                        Width="90" Height="30" Margin="0,0,10,0"
+                                        IsEnabled="False" Click="CancelHash_Click"/>
+                                <Button x:Name="VirusTotalButton" Content="VirusTotal"
+                                        Width="100" Height="30" Margin="0,0,10,0"
+                                        Click="VirusTotal_Click"
+                                        ToolTipService.ShowOnDisabled="True"
+                                        ToolTip="Look up the file's SHA256 on VirusTotal. Only the hash is sent, never the file."/>
+                                <Button x:Name="ComputeHashButton" Content="Compute"
+                                        Width="100" Height="30" FontWeight="SemiBold"
+                                        Click="ComputeHash_Click"/>
+                            </StackPanel>
+                        </Grid>
                     </Grid>
                 </TabItem>
 
@@ -568,7 +659,7 @@
                                   SelectionChanged="HistoryList_SelectionChanged">
                             <ListView.View>
                                 <GridView x:Name="HistoryGridView">
-                                    <GridViewColumn Width="120">
+                                    <GridViewColumn Width="127">
                                         <GridViewColumn.Header>
                                             <TextBlock Text="Time" Tag="Timestamp"
                                                        ToolTip="Date and time the scan was started."/>
@@ -669,20 +760,24 @@
                                     ToolTip="Select an existing ClamAV folder on this PC; its location is used and saved"/>
                             <Border Height="1" Background="#FF3A3D46" Margin="0,12,0,12"/>
 
-                            <TextBlock Text="GUI  (settings.json)" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                            <CheckBox x:Name="SetUseDaemon" Content="Prefer daemon for scans" Margin="0,7"/>
-                            <CheckBox x:Name="SetAutoStart" Content="Start daemon with the GUI" Margin="0,7"/>
-                            <CheckBox x:Name="SetUpdateOnStart" Content="Update signatures on startup" Margin="0,7"/>
-                            <CheckBox x:Name="SetSound" Content="Sound on detection" Margin="0,7"/>
+                            <TextBlock Text="GUI behavior  (settings.json)" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                            <CheckBox x:Name="SetAutoStart" Content="Start daemon on startup" Margin="0,4"
+                                      ToolTip="Start the clamd daemon in the background when ClamHub launches (independent of the scan setting)."/>
+                            <CheckBox x:Name="SetUpdateOnStart" Content="Update signatures on startup" Margin="0,4"
+                                      ToolTip="Run freshclam to update virus definitions each time ClamHub starts."/>
+                            <CheckBox x:Name="SetSound" Content="Sound on detection" Margin="0,4"
+                                      ToolTip="Play a short sound when a scan finds an infected file."/>
                             <CheckBox x:Name="SetCountFiles" Content="Count scanned files (daemon)"
-                                      Margin="0,7"
+                                      Margin="0,4"
                                       ToolTip="Counts files in the target after a daemon scan; clamdscan does not report this. Runs in the background."/>
-                            <CheckBox x:Name="SetMultiScan" Content="Multi-threaded scans by default" Margin="0,7"/>
-                            <CheckBox x:Name="SetAlwaysAdmin" Content="Always start as admin" Margin="0,7"
+                            <CheckBox x:Name="SetMultiScan" Content="Multi-threaded scans by default" Margin="0,4"
+                                      ToolTip="Pass --multiscan so scans use multiple CPU threads."/>
+                            <CheckBox x:Name="SetAlwaysAdmin" Content="Always start as admin" Margin="0,4"
                                       ToolTip="Relaunch elevated on startup (asks via UAC). If declined, starts normally."/>
                             <StackPanel Orientation="Horizontal" Margin="0,10,0,2">
                                 <TextBlock Text="Default action:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                <ComboBox x:Name="SetDefaultAction" Width="120" Height="26" SelectedIndex="0">
+                                <ComboBox x:Name="SetDefaultAction" Width="120" Height="26" SelectedIndex="0"
+                                          ToolTip="What to do with infected files by default (used unless overridden per scan).">
                                     <ComboBoxItem Content="Report only"/>
                                     <ComboBoxItem Content="Quarantine"/>
                                     <ComboBoxItem Content="Remove"/>
@@ -706,14 +801,36 @@
                                           Stroke="{StaticResource DangerBrush}" StrokeThickness="1.8"/>
                                 </Button>
                             </Grid>
+                            <TextBlock TextWrapping="Wrap" Margin="0,5,0,0" FontSize="11"
+                                       Foreground="{StaticResource MutedTextBrush}"
+                                       Text="Stored unencrypted in settings.json next to the app (portable). Anyone with access to this folder can read it."/>
 
                             <Separator Margin="0,12,0,8" Background="#FF3A3D46"/>
-                            <CheckBox x:Name="SetContextMenu" Content="Windows context menu entry"
-                                      Margin="0,7" Click="ContextMenu_Click"
-                                      ToolTip="Adds 'Scan with ClamHub' to the right-click menu of files and folders"/>
+                            <TextBlock Text="Windows context menu" FontWeight="SemiBold" Margin="0,4,0,2"/>
+                            <TextBlock Text="Tick the entries to add to the right-click menu of files and folders."
+                                       Foreground="{StaticResource MutedTextBrush}"
+                                       TextWrapping="Wrap" Margin="0,0,0,6"/>
+
+                            <StackPanel x:Name="ContextMenuOptionsPanel">
+                                <TextBlock Text="Entries" Opacity="0.7" Margin="0,2,0,4"/>
+                                <StackPanel x:Name="ContextActionsPanel"/>
+
+                                <TextBlock Text="Layout (applies with 2 or more entries)"
+                                           Opacity="0.7" Margin="0,10,0,4"/>
+                                <RadioButton x:Name="SetGroupSubmenu" GroupName="CtxGrouping"
+                                             Content="Submenu (cascading ClamHub menu)" Margin="0,4"
+                                             ToolTip="Show multiple entries nested under one cascading ClamHub menu"/>
+                                <RadioButton x:Name="SetGroupInline" GroupName="CtxGrouping"
+                                             Content="Inline grouping (entries listed directly)" Margin="0,4"
+                                             ToolTip="Show multiple entries one under another directly in the context menu"/>
+                            </StackPanel>
+
                             <TextBlock x:Name="ContextMenuStatus"
                                        Foreground="{StaticResource MutedTextBrush}"
-                                       TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                       TextWrapping="Wrap" Margin="0,6,0,0"/>
+
+                            <CheckBox x:Name="SetUseDaemon" Content="Prefer daemon for scans" Margin="0,10,0,2"
+                                      ToolTip="Always uses daemon for context menu scans - when off, scans use standalone clamscan. Does not affect other actions."/>
 
                             <Separator Margin="0,6,0,8" Background="#FF3A3D46"/>
                             <TextBlock Text="Maintenance" FontWeight="SemiBold" Margin="0,0,0,8"/>
@@ -760,22 +877,20 @@
                                 <RowDefinition Height="*"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" FontWeight="SemiBold" Margin="0,0,0,8">
-                                <Run Text="Daemon  (clamd.conf)"/><Run x:Name="ClamdRunningRun"
-                                     Foreground="{StaticResource OkBrush}" Text=""/>
-                            </TextBlock>
+                            <TextBlock Grid.Row="0" FontWeight="SemiBold" Margin="0,0,0,8"
+                                       Text="Daemon  (clamd.conf)"/>
                             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
                                           Padding="0,0,4,0">
                                 <StackPanel x:Name="ClamdConfPanel"/>
                             </ScrollViewer>
                             <WrapPanel Grid.Row="2" Margin="0,10,0,0">
-                                <Button Content="Save" Width="64" Height="28" Margin="0,0,6,6"
+                                <Button Content="Save" Width="64" Height="30" Margin="0,0,6,6"
                                         Click="SaveClamdConf_Click"/>
-                                <Button Content="Reload" Width="64" Height="28" Margin="0,0,6,6"
+                                <Button Content="Reload" Width="64" Height="30" Margin="0,0,6,6"
                                         Click="ReloadConfEditors_Click"/>
-                                <Button Content="Open file" Width="76" Height="28" Margin="0,0,6,6"
+                                <Button Content="Open file" Width="76" Height="30" Margin="0,0,6,6"
                                         Click="OpenConfFile_Click" Tag="clamd"/>
-                                <Button Content="Rebuild config" Width="100" Height="28" Margin="0,0,6,6"
+                                <Button Content="Rebuild config" Width="118" Height="30" Margin="0,0,6,6"
                                         Click="RebuildConfig_Click" Tag="clamd"
                                         ToolTip="Rewrite this file with correct database and log paths (asks whether to keep your settings)"/>
                             </WrapPanel>
@@ -795,13 +910,13 @@
                                 <StackPanel x:Name="FreshConfPanel"/>
                             </ScrollViewer>
                             <WrapPanel Grid.Row="2" Margin="0,10,0,0">
-                                <Button Content="Save" Width="64" Height="28" Margin="0,0,6,6"
+                                <Button Content="Save" Width="64" Height="30" Margin="0,0,6,6"
                                         Click="SaveFreshConf_Click"/>
-                                <Button Content="Reload" Width="64" Height="28" Margin="0,0,6,6"
+                                <Button Content="Reload" Width="64" Height="30" Margin="0,0,6,6"
                                         Click="ReloadConfEditors_Click"/>
-                                <Button Content="Open file" Width="76" Height="28" Margin="0,0,6,6"
+                                <Button Content="Open file" Width="76" Height="30" Margin="0,0,6,6"
                                         Click="OpenConfFile_Click" Tag="freshclam"/>
-                                <Button Content="Rebuild config" Width="100" Height="28" Margin="0,0,6,6"
+                                <Button Content="Rebuild config" Width="118" Height="30" Margin="0,0,6,6"
                                         Click="RebuildConfig_Click" Tag="freshclam"
                                         ToolTip="Rewrite this file with correct database and log paths (asks whether to keep your settings)"/>
                             </WrapPanel>

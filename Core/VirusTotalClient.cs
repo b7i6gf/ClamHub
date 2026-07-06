@@ -31,6 +31,13 @@ public static class VirusTotalClient
     private static DateTime _lastRequest = DateTime.MinValue;
 
     /// <summary>
+    /// Serializes the rate-limit gap so two concurrent lookups cannot both slip
+    /// inside the 15s window (e.g. the Hash tab and the Quarantine tab firing at
+    /// once). Held only around the wait, not the network request.
+    /// </summary>
+    private static readonly SemaphoreSlim _rateLock = new(1, 1);
+
+    /// <summary>
     /// Queries VirusTotal for a SHA256 hash and returns the engine verdict
     /// statistics. Waits automatically when the rate limit gap is not yet over.
     /// Called from: MainWindow.VirusTotal_Click.
@@ -38,14 +45,23 @@ public static class VirusTotalClient
     public static async Task<VtResult> LookupAsync(string sha256, string apiKey,
         Action<string>? onStatus = null, CancellationToken cancel = default)
     {
-        // Local throttle for the free tier rate limit.
-        var wait = _lastRequest + MinRequestGap - DateTime.UtcNow;
-        if (wait > TimeSpan.Zero)
+        // Local throttle for the free tier rate limit, serialized so parallel
+        // lookups keep the 15s spacing between them instead of racing the check.
+        await _rateLock.WaitAsync(cancel);
+        try
         {
-            onStatus?.Invoke($"Rate limit: waiting {wait.TotalSeconds:0}s before the request...");
-            await Task.Delay(wait, cancel);
+            var wait = _lastRequest + MinRequestGap - DateTime.UtcNow;
+            if (wait > TimeSpan.Zero)
+            {
+                onStatus?.Invoke($"Rate limit: waiting {wait.TotalSeconds:0}s before the request...");
+                await Task.Delay(wait, cancel);
+            }
+            _lastRequest = DateTime.UtcNow;
         }
-        _lastRequest = DateTime.UtcNow;
+        finally
+        {
+            _rateLock.Release();
+        }
 
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://www.virustotal.com/api/v3/files/{sha256.ToLowerInvariant()}");

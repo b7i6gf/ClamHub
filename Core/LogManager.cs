@@ -30,7 +30,17 @@ public static class LogManager
         foreach (var line in lines)
             sb.AppendLine(line);
 
-        File.AppendAllText(AppPaths.InfectedFilesReport, sb.ToString());
+        // Never let a logging failure (missing/read-only Logs folder, full disk,
+        // momentary lock) bubble up and abort the scan finish (summary, history,
+        // quarantine move); report it as a console line instead.
+        try
+        {
+            File.AppendAllText(AppPaths.InfectedFilesReport, sb.ToString());
+        }
+        catch (Exception ex)
+        {
+            AppNotifications.ReportError($"Could not write the infected-files report: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -66,7 +76,10 @@ public static class LogManager
             // so read with a shared handle and skip any file that still fails.
             foreach (var line in ReadLinesShared(logFile))
             {
-                if (line.Contains(" FOUND") && !existing.Contains(line) && !found.Contains(line))
+                // existing.Add returns false when the line is already in the report
+                // OR was already collected this run, so it deduplicates in O(1)
+                // (was an O(n) found.Contains scan) while keeping log order in found.
+                if (line.Contains(" FOUND") && existing.Add(line))
                     found.Add(line);
             }
         }

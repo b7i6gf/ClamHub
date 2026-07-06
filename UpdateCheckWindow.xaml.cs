@@ -33,15 +33,25 @@ public partial class UpdateCheckWindow : Window
     /// <summary>True after ClamAV was downloaded and unpacked, so the owner can refresh.</summary>
     public bool ClamAvWasInstalled { get; private set; }
 
+    /// <summary>True when clamd was running just before a ClamAV install stopped it to
+    /// unlock the files, so the owner knows to restart it after the update.</summary>
+    public bool DaemonWasRunningBeforeInstall { get; private set; }
+
     /// <summary>
     /// Builds the dialog with the currently installed versions to display.
     /// Called from: MainWindow.OpenUpdateCheck.
     /// </summary>
-    public UpdateCheckWindow(string clamHubVersion, string? clamAvEngine)
+    /// <summary>Optional sink to mirror upgrade progress (incl. the SHA256 integrity
+    /// check) into the main window's console, so it leaves a visible record instead
+    /// of only the transient status label. Set via the constructor.</summary>
+    private readonly Action<string>? _consoleLog;
+
+    public UpdateCheckWindow(string clamHubVersion, string? clamAvEngine, Action<string>? consoleLog = null)
     {
         InitializeComponent();
         _clamHubVersion = clamHubVersion;
         _clamAvEngine = string.IsNullOrWhiteSpace(clamAvEngine) ? "not installed" : clamAvEngine!;
+        _consoleLog = consoleLog;
         Loaded += async (_, _) => await CheckAsync();
     }
 
@@ -255,13 +265,22 @@ public partial class UpdateCheckWindow : Window
         SetBusy(true, $"Preparing {asset.Name}...");
         CancelButton.Visibility = Visibility.Visible;
 
+        // Anchor the upgrade in the main console so the SHA256 integrity result below
+        // is visible there (the status label only shows the latest line transiently).
+        _consoleLog?.Invoke("");
+        _consoleLog?.Invoke($"ClamHub self-upgrade: {asset.Name}");
+
         string? staged;
         try
         {
             var token = _downloadCts.Token;
             staged = await SelfUpdater.PrepareUpdateAsync(
-                asset.DownloadUrl, _clamHubIsZip, asset.Size,
-                msg => Dispatcher.Invoke(() => StatusText.Text = msg),
+                asset.DownloadUrl, _clamHubIsZip, asset.Size, asset.Digest,
+                msg => Dispatcher.Invoke(() =>
+                {
+                    StatusText.Text = msg;
+                    _consoleLog?.Invoke(msg); // download + "Verifying SHA256..."/"SHA256 verified." etc.
+                }),
                 (done, total) => Dispatcher.Invoke(() => ShowProgress(done, total)),
                 token);
         }
@@ -286,17 +305,24 @@ public partial class UpdateCheckWindow : Window
         }
 
         StatusText.Text = "Installing the new version...";
+        _consoleLog?.Invoke("Installing the new version...");
         var (ok, error) = SelfUpdater.TrySwap(staged);
         if (!ok)
         {
             try { System.IO.File.Delete(staged); } catch { /* leftover staged file */ }
-            StatusText.Text = error ?? "Could not replace the current version.";
+            string swapMsg = error ?? "Could not replace the current version.";
+            StatusText.Text = swapMsg;
+            _consoleLog?.Invoke(swapMsg);
             ClamHubButton.IsEnabled = true;
             return;
         }
 
         // Swap done: start the new exe (which cleans up the old one) and exit.
         StatusText.Text = "Restarting...";
+        _consoleLog?.Invoke("Update installed. Restarting...");
+        // Keep the daemon alive across the restart: the exit cleanup checks this and
+        // skips killing clamd, so the fresh instance finds it already running.
+        SelfUpdater.RestartingForUpdate = true;
         try
         {
             SingleInstance.ReleasePrimary();
@@ -309,6 +335,7 @@ public partial class UpdateCheckWindow : Window
         }
         catch (Exception ex)
         {
+            SelfUpdater.RestartingForUpdate = false; // restart failed; normal cleanup applies
             StatusText.Text = $"Could not start the new version: {ex.Message}";
             return;
         }
@@ -349,15 +376,27 @@ public partial class UpdateCheckWindow : Window
         _downloadCts = new CancellationTokenSource();
         SetBusy(true, $"Preparing {asset.Name}...");
         CancelButton.Visibility = Visibility.Visible;
+        // Remember if the daemon was up before we stop it to unlock clamd.exe, so the
+        // owner can bring it back after the update.
+        DaemonWasRunningBeforeInstall = await DaemonController.IsRunningAsync();
         DaemonController.KillAllOwned(); // release any lock on clamd.exe before overwriting
+
+        // Anchor the install in the main console so the SHA256 integrity result is
+        // visible there (the status label only shows the latest line transiently).
+        _consoleLog?.Invoke("");
+        _consoleLog?.Invoke($"ClamAV install: {asset.Name}");
 
         bool ok;
         try
         {
             var token = _downloadCts.Token;
             ok = await Task.Run(() => ClamAvInstaller.DownloadAndExtractAsync(
-                asset.DownloadUrl, asset.Size,
-                msg => Dispatcher.Invoke(() => StatusText.Text = msg),
+                asset.DownloadUrl, asset.Size, asset.Digest,
+                msg => Dispatcher.Invoke(() =>
+                {
+                    StatusText.Text = msg;
+                    _consoleLog?.Invoke(msg); // download + "Verifying SHA256..."/result + extract
+                }),
                 (done, total) => Dispatcher.Invoke(() => ShowProgress(done, total)),
                 token));
         }

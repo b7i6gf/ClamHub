@@ -24,6 +24,18 @@ public partial class MainWindow
     /// <summary>Suppresses dirty marking while controls are filled programmatically.</summary>
     private bool _settingsLoading;
 
+    /// <summary>Maps each context action id to its settings checkbox, so toggles can be read back.</summary>
+    private readonly Dictionary<string, System.Windows.Controls.CheckBox> _contextActionChecks = new();
+
+    /// <summary>The "Select Scan Action" sub-checkbox shown under the Scan entry, or null.</summary>
+    private System.Windows.Controls.CheckBox? _scanActionSelectableCheck;
+
+    /// <summary>
+    /// Suppresses the context menu save/register handlers while the entry checkboxes
+    /// and grouping radios are set programmatically (build and refresh).
+    /// </summary>
+    private bool _contextMenuLoading;
+
     /// <summary>
     /// Sets the colored save indicator at the bottom of the Settings tab.
     /// brushKey is a resource key (OkBrush/WarnBrush/DangerBrush) or null to clear.
@@ -71,6 +83,7 @@ public partial class MainWindow
         SetVtKey.Text = string.IsNullOrEmpty(s.VirusTotalApiKey) ? "" : VtKeyMask;
         UpdateClamAvPathDisplay();
 
+        InitializeContextMenuUi();
         RefreshContextMenuState();
         LoadConfEditors();
 
@@ -104,48 +117,155 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Updates the context menu checkbox and the repair hint from the registry.
-    /// Called from: InitializeSettingsTab and after every context menu action.
+    /// Updates the context menu status line and the per-action availability from the
+    /// registry/settings. Called from: InitializeSettingsTab and after every context
+    /// menu change.
     /// </summary>
     private void RefreshContextMenuState()
     {
-        bool registered = ContextMenuManager.IsRegistered();
-        // Avoid firing the Click handler while setting the state programmatically.
-        SetContextMenu.Click -= ContextMenu_Click;
-        SetContextMenu.IsChecked = registered;
-        SetContextMenu.Click += ContextMenu_Click;
-
-        if (registered && ContextMenuManager.NeedsRepair())
+        if (ContextMenuManager.IsRegistered() && ContextMenuManager.NeedsRepair())
             ContextMenuStatus.Text =
-                "Entry points to a different location (folder moved). Untick and tick again to repair.";
-        else if (registered)
-            ContextMenuStatus.Text = "Active for files and folders.";
+                "Entries point to a different location (folder moved). Toggle an entry to repair.";
+        else if (ContextMenuManager.IsRegistered())
+            ContextMenuStatus.Text = "Active for the ticked entries.";
         else
-            ContextMenuStatus.Text = "";
+            ContextMenuStatus.Text = "No entries selected.";
+
+        RefreshContextActionAvailability();
     }
 
     /// <summary>
-    /// Registers or removes the Windows context menu entry when the checkbox
-    /// is toggled. Called from: XAML Click binding of SetContextMenu.
+    /// Builds the per-action context menu checkboxes from ContextMenuManager.Actions
+    /// (each with its description as a tooltip), inserts the indented "Select Scan
+    /// Action" sub-option under the Scan entry, and initialises the grouping radios
+    /// from settings. All changes save and re-register. Called from: InitializeSettingsTab.
     /// </summary>
-    private void ContextMenu_Click(object sender, RoutedEventArgs e)
+    private void InitializeContextMenuUi()
     {
-        string? error;
-        if (SetContextMenu.IsChecked == true)
+        _contextMenuLoading = true;
+
+        var s = SettingsManager.Current;
+
+        ContextActionsPanel.Children.Clear();
+        _contextActionChecks.Clear();
+        _scanActionSelectableCheck = null;
+
+        foreach (var action in ContextMenuManager.Actions)
         {
-            ContextMenuManager.Register(out error);
-            SetSettingsStatus(error == null
-                ? "Context menu entry added." : $"Failed: {error}",
-                error == null ? "OkBrush" : "DangerBrush");
+            var check = new System.Windows.Controls.CheckBox
+            {
+                Content = action.Label,
+                IsChecked = s.ContextMenuEnabledActions.Contains(action.Id, StringComparer.OrdinalIgnoreCase),
+                Margin = new Thickness(0, 4, 0, 4),
+                ToolTip = action.Hint
+            };
+            System.Windows.Controls.ToolTipService.SetShowOnDisabled(check, true);
+            check.Click += (_, _) => OnContextMenuOptionChanged();
+            _contextActionChecks[action.Id] = check;
+            ContextActionsPanel.Children.Add(check);
+
+            // The scan entry offers an extra sub-option: turn it into a Report /
+            // Quarantine / Remove submenu instead of using the app default action.
+            if (action.Id == "scan")
+            {
+                _scanActionSelectableCheck = new System.Windows.Controls.CheckBox
+                {
+                    Content = "Select Scan Action",
+                    IsChecked = s.ContextMenuScanActionSelectable,
+                    Margin = new Thickness(18, 4, 0, 4),
+                    ToolTip = "Add a Report / Quarantine / Remove submenu under Scan; otherwise the "
+                            + "app default action is used."
+                };
+                System.Windows.Controls.ToolTipService.SetShowOnDisabled(_scanActionSelectableCheck, true);
+                _scanActionSelectableCheck.Click += (_, _) => OnContextMenuOptionChanged();
+                ContextActionsPanel.Children.Add(_scanActionSelectableCheck);
+            }
         }
+
+        SetGroupSubmenu.IsChecked = s.ContextMenuGrouping == ContextMenuGrouping.Submenu;
+        SetGroupInline.IsChecked = s.ContextMenuGrouping == ContextMenuGrouping.Inline;
+        SetGroupSubmenu.Checked += (_, _) => OnContextMenuOptionChanged();
+        SetGroupInline.Checked += (_, _) => OnContextMenuOptionChanged();
+
+        _contextMenuLoading = false;
+
+        RefreshContextActionAvailability();
+    }
+
+    /// <summary>
+    /// Updates the enabled state of context checkboxes that depend on something else:
+    /// the VirusTotal entry needs an API key, and "Select Scan Action" only applies
+    /// when the Scan entry is ticked. Called from: InitializeContextMenuUi,
+    /// RefreshContextMenuState, OnContextMenuOptionChanged and after a key change.
+    /// </summary>
+    private void RefreshContextActionAvailability()
+    {
+        bool hasVtKey = !string.IsNullOrWhiteSpace(SettingsManager.Current.VirusTotalApiKey);
+        foreach (var action in ContextMenuManager.Actions)
+        {
+            if (!action.RequiresVirusTotalKey) continue;
+            if (!_contextActionChecks.TryGetValue(action.Id, out var check)) continue;
+            check.IsEnabled = hasVtKey;
+            check.ToolTip = hasVtKey
+                ? action.Hint
+                : "Requires a VirusTotal API key (set one above). The entry is not added until a key exists.";
+        }
+
+        if (_scanActionSelectableCheck != null
+            && _contextActionChecks.TryGetValue("scan", out var scanCheck))
+            _scanActionSelectableCheck.IsEnabled = scanCheck.IsChecked == true;
+    }
+
+    /// <summary>
+    /// Handles any context menu change: writes the current selection (ticked ids,
+    /// grouping, scan-action sub-option) into settings.json and rewrites the registry
+    /// so it matches (adding, removing or restructuring entries as needed).
+    /// Called from: the checkbox/radio wiring in InitializeContextMenuUi.
+    /// </summary>
+    private void OnContextMenuOptionChanged()
+    {
+        if (_contextMenuLoading) return;
+
+        var s = SettingsManager.Current;
+        s.ContextMenuGrouping = SetGroupInline.IsChecked == true
+            ? ContextMenuGrouping.Inline
+            : ContextMenuGrouping.Submenu;
+        s.ContextMenuEnabledActions = _contextActionChecks
+            .Where(kv => kv.Value.IsChecked == true)
+            .Select(kv => kv.Key)
+            .ToList();
+        s.ContextMenuScanActionSelectable = _scanActionSelectableCheck?.IsChecked == true;
+
+        // Keep the "Select Scan Action" enabled state in step with the Scan tick.
+        RefreshContextActionAvailability();
+
+        if (!SettingsManager.Save())
+        {
+            SetSettingsStatus("Settings could not be saved.", "DangerBrush");
+            return;
+        }
+
+        ContextMenuManager.Register(out var error);
+        if (error != null)
+            SetSettingsStatus($"Failed: {error}", "DangerBrush");
         else
-        {
-            ContextMenuManager.Unregister(out error);
-            SetSettingsStatus(error == null
-                ? "Context menu entry removed." : $"Failed: {error}",
-                error == null ? "OkBrush" : "DangerBrush");
-        }
+            SetSettingsStatus(s.ContextMenuEnabledActions.Count > 0
+                ? "Context menu updated." : "Context menu entries removed.", "OkBrush");
+
         RefreshContextMenuState();
+    }
+
+    /// <summary>
+    /// Keeps the context menu in sync with the VirusTotal API key: refreshes the VT
+    /// checkbox availability and, when any entry is enabled, rewrites the registry so
+    /// the VirusTotal entry appears or disappears with the key.
+    /// Called from: SaveVtKeyOnBlur and ClearVtKey_Click.
+    /// </summary>
+    private void SyncContextMenuForVtKey()
+    {
+        RefreshContextActionAvailability();
+        if (SettingsManager.Current.ContextMenuEnabledActions.Count > 0)
+            ContextMenuManager.Register(out _);
     }
 
     /// <summary>
@@ -244,7 +364,7 @@ public partial class MainWindow
             {
                 // yes/no only; the documented default is preselected when the
                 // key is absent, instead of a separate "(default)" entry.
-                var combo = new ComboBox { Height = 24, ToolTip = param.Hint };
+                var combo = new ComboBox { Height = 28, ToolTip = param.Hint };
                 combo.Items.Add(new ComboBoxItem { Content = "yes" });
                 combo.Items.Add(new ComboBoxItem { Content = "no" });
                 bool def = ParseDefaultBool(param.Hint);
@@ -262,7 +382,7 @@ public partial class MainWindow
             {
                 var box = new TextBox
                 {
-                    Height = 24,
+                    Height = 28,
                     Text = current ?? "",
                     VerticalContentAlignment = VerticalAlignment.Center,
                     ToolTip = param.Hint
@@ -319,6 +439,7 @@ public partial class MainWindow
         SettingsManager.Current.VirusTotalApiKey = "";
         SettingsManager.Save();
         RefreshVirusTotalButtons();
+        SyncContextMenuForVtKey();
         SetSettingsStatus("VirusTotal API key removed.", "OkBrush");
     }
 
@@ -377,6 +498,8 @@ public partial class MainWindow
         var key = SettingsManager.Current.VirusTotalApiKey;
         SetVtKey.Text = string.IsNullOrEmpty(key) ? "" : VtKeyMask;
         _settingsLoading = false;
+        // A new/removed key can add or drop the VirusTotal context menu entry.
+        SyncContextMenuForVtKey();
     }
 
     /// <summary>

@@ -22,6 +22,13 @@ public static class SettingsManager
     public static AppSettings Current { get; private set; } = new();
 
     /// <summary>
+    /// Reason the last Load() fell back to defaults (a corrupt or unreadable
+    /// settings.json), or null when settings loaded cleanly. Read once by MainWindow
+    /// at startup to warn the user. Set by: Load.
+    /// </summary>
+    public static string? LoadError { get; private set; }
+
+    /// <summary>
     /// Loads settings.json or creates it with defaults when missing or invalid.
     /// Called from: App.xaml.cs before the main window opens.
     /// </summary>
@@ -32,7 +39,14 @@ public static class SettingsManager
             if (File.Exists(AppPaths.SettingsFile))
             {
                 var json = File.ReadAllText(AppPaths.SettingsFile);
-                Current = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+                // An empty/whitespace file or a literal "null" deserializes without a
+                // JSON syntax error but is not usable settings; treat both as corrupt
+                // (throw) so the catch below records it and the user is told, instead
+                // of silently running on defaults.
+                if (string.IsNullOrWhiteSpace(json))
+                    throw new InvalidDataException("settings.json is empty");
+                Current = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions)
+                          ?? throw new InvalidDataException("settings.json deserialized to null");
             }
             else
             {
@@ -40,10 +54,12 @@ public static class SettingsManager
                 Save();
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // Corrupt file: fall back to defaults but do not overwrite the broken
-            // file automatically, the user may want to fix it manually.
+            // file automatically, the user may want to fix it manually. Record the
+            // reason so MainWindow can warn once at startup.
+            LoadError = ex.Message;
             Current = new AppSettings();
         }
         return Current;

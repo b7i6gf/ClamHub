@@ -155,10 +155,10 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Looks up the selected quarantined file on VirusTotal via its SHA256.
-    /// The stored copy has the same content (and hash) as the original, so the
-    /// verdict is meaningful. Output goes to the console.
-    /// Called from: XAML Click binding (Quarantine VirusTotal).
+    /// Looks up the selected quarantined file on VirusTotal via the ORIGINAL file's
+    /// SHA256. The stored copy is XOR-obfuscated, so the hash is recomputed from the
+    /// de-obfuscated bytes (in memory only) to match what VT knows. Output goes to
+    /// the console. Called from: XAML Click binding (Quarantine VirusTotal).
     /// </summary>
     private async void QuarantineVirusTotal_Click(object sender, RoutedEventArgs e)
     {
@@ -167,8 +167,15 @@ public partial class MainWindow
             QuarantineStatus.Text = "Select a file to check on VirusTotal.";
             return;
         }
+        var sha256 = QuarantineManager.ComputeOriginalSha256(entry, out var error);
+        if (sha256 == null)
+        {
+            AppendSection("VIRUSTOTAL");
+            AppendLine($"Could not read the quarantined file to hash it: {error}");
+            return;
+        }
         var stored = System.IO.Path.Combine(AppPaths.QuarantineDir, entry.Id);
-        await RunVirusTotalLookup(stored, entry.OriginalName);
+        await RunVirusTotalLookup(stored, entry.OriginalName, sha256);
     }
 
     /// <summary>Opens the quarantine folder in Explorer. Called from: XAML Click binding.</summary>

@@ -70,9 +70,12 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
-                            <TabPanel x:Name="HeaderPanel" Grid.Row="0" IsItemsHost="True"
-                                      Margin="0" Background="Transparent" Panel.ZIndex="1"/>
-                            <Grid x:Name="PART_ItemsHolder" Grid.Row="1" Margin="0"/>
+                            <Border Grid.Row="0" BorderBrush="{StaticResource WindowBorderBrush}"
+                                    BorderThickness="0,0,0,1">
+                                <TabPanel x:Name="HeaderPanel" IsItemsHost="True"
+                                          Margin="0" Background="Transparent" Panel.ZIndex="1"/>
+                            </Border>
+                            <Grid x:Name="PART_ItemsHolder" Grid.Row="1" Margin="0,0,0,0"/>
                         </Grid>
                     </ControlTemplate>
                 </Setter.Value>
@@ -86,17 +89,20 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
-                        <Border x:Name="Bd" Background="Transparent" BorderThickness="0,0,0,1"
-                                BorderBrush="Transparent" Padding="2,7,2,6" Margin="0,0,18,0">
-                            <ContentPresenter ContentSource="Header"/>
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="6,6,0,0"
+                                Padding="14,7,14,8" Margin="0,0,4,0">
+                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="#FF80838C"/>
-                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                <Setter TargetName="Bd" Property="Background"
+                                        Value="{StaticResource ControlBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                <Setter TargetName="Bd" Property="Background"
+                                        Value="{StaticResource ControlHoverBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -339,8 +345,8 @@
                                         BorderBrush="#FF55585F" BorderThickness="1"
                                         CornerRadius="4" Margin="0,2,0,0"
                                         MinWidth="{TemplateBinding ActualWidth}"
-                                        MaxHeight="240">
-                                    <ScrollViewer>
+                                        MaxHeight="300">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
                                         <ItemsPresenter/>
                                     </ScrollViewer>
                                 </Border>

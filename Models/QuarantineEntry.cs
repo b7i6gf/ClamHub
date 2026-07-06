@@ -22,6 +22,14 @@ public class QuarantineEntry
     /// <summary>File size in bytes at quarantine time.</summary>
     public long SizeBytes { get; set; }
 
+    /// <summary>
+    /// True when the stored .quar file has its bytes XORed so co-resident AV
+    /// (e.g. Windows Defender) cannot match a signature against the quarantined
+    /// copy; Restore reverses the XOR. Legacy entries from before this feature are
+    /// false (stored as-is) and restore untouched.
+    /// </summary>
+    public bool Obfuscated { get; set; }
+
     /// <summary>Original file name without the directory, shown in the list.</summary>
     public string OriginalName =>
         string.IsNullOrEmpty(OriginalPath) ? Id : System.IO.Path.GetFileName(OriginalPath);

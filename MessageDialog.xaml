@@ -1,7 +1,7 @@
 <Window x:Class="ClamHub.MessageDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ClamHub" SizeToContent="Height" Width="440"
+        Title="ClamHub" SizeToContent="Height" Width="520"
         WindowStartupLocation="CenterOwner" WindowStyle="None" ResizeMode="NoResize"
         Background="{StaticResource BgBrush}"
         MouseLeftButtonDown="Window_MouseLeftButtonDown">
@@ -22,7 +22,9 @@
                 <Button x:Name="ConfirmButton" MinWidth="100" Height="30" Padding="14,0"
                         Margin="0,0,8,0" Click="Confirm_Click"/>
                 <Button x:Name="CancelButton" MinWidth="90" Height="30" Padding="14,0"
-                        Click="Cancel_Click"/>
+                        Margin="0,0,8,0" Click="Cancel_Click"/>
+                <Button x:Name="ExtraButton" MinWidth="90" Height="30" Padding="14,0"
+                        Visibility="Collapsed" Click="Extra_Click"/>
             </StackPanel>
         </Grid>
     </Border>

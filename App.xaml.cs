@@ -19,10 +19,24 @@ public partial class App : Application
     public static ConfigManager.ConfigCheckResult? StartupCheck { get; private set; }
 
     /// <summary>
-    /// Path passed via "--scan &lt;path&gt;" from the context menu, or null.
-    /// Read by MainWindow.InitializeAsync to start a scan automatically.
+    /// Id of the context menu action requested via "--action &lt;id&gt; &lt;path&gt;"
+    /// (or "scan" for the legacy "--scan &lt;path&gt;"), or null. Read by
+    /// MainWindow.InitializeAsync to run the action automatically.
     /// </summary>
-    public static string? StartupScanPath { get; private set; }
+    public static string? StartupActionId { get; private set; }
+
+    /// <summary>
+    /// Path passed with the startup action, or null. Read by
+    /// MainWindow.InitializeAsync together with StartupActionId.
+    /// </summary>
+    public static string? StartupActionPath { get; private set; }
+
+    /// <summary>
+    /// Infected-file action passed with a scan request via "--infected
+    /// &lt;report|quarantine|remove&gt;", or null to use the app default. Read by
+    /// MainWindow.InitializeAsync.
+    /// </summary>
+    public static string? StartupInfectedAction { get; private set; }
 
     /// <summary>
     /// Startup hook. Called by: WPF runtime before StartupUri window is created.
@@ -50,14 +64,14 @@ public partial class App : Application
             return;
         }
 
-        // If another ClamHub is already running, hand it our scan request (or a
-        // plain activate) and exit instead of opening a second window.
+        // If another ClamHub is already running, hand it our request (or a plain
+        // activate) and exit instead of opening a second window.
         if (!SingleInstance.ClaimPrimary())
         {
             SingleInstance.SendToPrimary(
-                string.IsNullOrWhiteSpace(StartupScanPath)
+                string.IsNullOrWhiteSpace(StartupActionPath)
                     ? SingleInstance.ActivateMessage
-                    : StartupScanPath);
+                    : SingleInstance.FormatRequest(StartupActionId ?? "scan", StartupActionPath, StartupInfectedAction));
             Shutdown();
             return;
         }
@@ -70,6 +84,11 @@ public partial class App : Application
 
         AppPaths.EnsureDirectories();
         StartupCheck = ConfigManager.EnsureConfigs();
+
+        // Make the Windows context menu match the saved selection (adds/removes
+        // entries and repairs a moved-folder path). Primary instance only.
+        ContextMenuManager.SyncToSettings();
+
         base.OnStartup(e);
     }
 
@@ -81,10 +100,11 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Relaunches the app elevated via the UAC prompt, forwarding any scan path.
-    /// Returns true if the elevated copy was started (so this one should exit), or
-    /// false if the prompt was declined or the path is unknown (continue normally).
-    /// Called from: OnStartup when AlwaysStartAsAdmin is set.
+    /// Relaunches the app elevated via the UAC prompt, forwarding any pending
+    /// context action + path. Returns true if the elevated copy was started (so
+    /// this one should exit), or false if the prompt was declined or there is
+    /// nothing to forward (continue normally). Called from: OnStartup when
+    /// AlwaysStartAsAdmin is set.
     /// </summary>
     private static bool TryRelaunchElevated()
     {
@@ -97,7 +117,7 @@ public partial class App : Application
                 FileName = exe,
                 UseShellExecute = true,
                 Verb = "runas",
-                Arguments = string.IsNullOrWhiteSpace(StartupScanPath) ? "" : $"--scan \"{StartupScanPath}\""
+                Arguments = BuildForwardArgs()
             });
             return true;
         }
@@ -109,6 +129,19 @@ public partial class App : Application
     }
 
     /// <summary>
+    /// Builds the command-line arguments that forward the current context action
+    /// to a relaunched instance, or "" when there is nothing to forward.
+    /// Called from: TryRelaunchElevated.
+    /// </summary>
+    private static string BuildForwardArgs()
+    {
+        if (string.IsNullOrWhiteSpace(StartupActionPath)) return "";
+        string infected = string.IsNullOrWhiteSpace(StartupInfectedAction)
+            ? "" : $"--infected {StartupInfectedAction} ";
+        return $"--action {StartupActionId ?? "scan"} {infected}--path \"{StartupActionPath}\"";
+    }
+
+    /// <summary>
     /// Shutdown hook. Ensures clamd and any other bundled ClamAV process is
     /// terminated whenever the app exits, even through close paths that do not
     /// go through the main window. Safe to run after the window already cleaned
@@ -117,7 +150,11 @@ public partial class App : Application
     /// </summary>
     protected override void OnExit(ExitEventArgs e)
     {
-        DaemonController.KillAllOwned();
+        // During an update restart, deliberately leave clamd running so the fresh
+        // instance finds it already up (no gap/race with its own auto-start).
+        // Otherwise stop every bundled ClamAV process.
+        if (!SelfUpdater.RestartingForUpdate)
+            DaemonController.KillAllOwned();
         base.OnExit(e);
     }
 
@@ -188,17 +225,33 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Extracts the "--scan &lt;path&gt;" argument from the command line.
-    /// Called from: OnStartup.
+    /// Extracts the startup context action from the command line. Supports the
+    /// current form "--action &lt;id&gt; [--infected &lt;a&gt;] --path &lt;path&gt;"
+    /// in any order, plus two legacy fallbacks: a bare path right after the id, and
+    /// "--scan &lt;path&gt;" (treated as the "scan" action). Called from: OnStartup.
     /// </summary>
     private static void ParseArguments(string[] args)
     {
-        for (int i = 0; i < args.Length - 1; i++)
+        for (int i = 0; i < args.Length; i++)
         {
-            if (string.Equals(args[i], "--scan", StringComparison.OrdinalIgnoreCase))
+            switch (args[i].ToLowerInvariant())
             {
-                StartupScanPath = args[i + 1];
-                return;
+                case "--action" when i + 1 < args.Length:
+                    StartupActionId = args[i + 1];
+                    // Legacy: a bare path could follow the id directly (no --path flag).
+                    if (i + 2 < args.Length && !args[i + 2].StartsWith("--"))
+                        StartupActionPath = args[i + 2];
+                    break;
+                case "--infected" when i + 1 < args.Length:
+                    StartupInfectedAction = args[i + 1];
+                    break;
+                case "--path" when i + 1 < args.Length:
+                    StartupActionPath = args[i + 1];
+                    break;
+                case "--scan" when i + 1 < args.Length:
+                    StartupActionId = "scan";
+                    StartupActionPath = args[i + 1];
+                    break;
             }
         }
     }

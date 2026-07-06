@@ -24,15 +24,29 @@ public enum InfectedFileAction
 }
 
 /// <summary>
+/// How multiple ClamHub context menu entries are laid out in the Windows
+/// right-click menu: nested under a single cascading "ClamHub" submenu, or listed
+/// one under another directly in the menu. With only one applicable entry the
+/// distinction is ignored (a single flat entry is written). Chosen in Settings;
+/// consumed by Core.ContextMenuManager when registering.
+/// </summary>
+public enum ContextMenuGrouping
+{
+    Submenu,
+    Inline
+}
+
+/// <summary>
 /// User configurable settings, persisted as settings.json next to the EXE.
 /// Loaded and saved by: Core.SettingsManager. Consumed by all modules.
 /// </summary>
 public class AppSettings
 {
-    /// <summary>Prefer clamdscan via the daemon. Falls back to clamscan when clamd is not running.</summary>
+    /// <summary>"Prefer daemon for scans" (shown in the context menu settings section). Scans only:
+    /// use clamdscan and start clamd first if needed; falls back to clamscan if the daemon cannot start.</summary>
     public bool UseDaemon { get; set; } = true;
 
-    /// <summary>Start clamd automatically when the GUI starts.</summary>
+    /// <summary>"Start daemon on startup": start clamd in the background on launch, independent of UseDaemon.</summary>
     public bool AutoStartDaemon { get; set; } = true;
 
     /// <summary>Pass --multiscan to clamdscan so the daemon scans with multiple threads.</summary>
@@ -118,6 +132,29 @@ public class AppSettings
     /// excludes, so any exclusion forces the scan onto clamscan.
     /// </summary>
     public List<string> ExcludeFiles { get; set; } = new();
+
+    /// <summary>
+    /// Layout of multiple context menu entries: a cascading "ClamHub" submenu
+    /// (default) or an inline list. Ignored when only one entry applies. Applied by
+    /// Core.ContextMenuManager.Register.
+    /// </summary>
+    public ContextMenuGrouping ContextMenuGrouping { get; set; } = ContextMenuGrouping.Submenu;
+
+    /// <summary>
+    /// Ids of the context menu actions the user has switched ON (opt-in). Empty by
+    /// default, so a fresh install adds nothing until the user picks entries in
+    /// Settings. Only actions listed here are registered (the VirusTotal entry also
+    /// needs an API key). Consumed by ContextMenuManager.
+    /// </summary>
+    public List<string> ContextMenuEnabledActions { get; set; } = new();
+
+    /// <summary>
+    /// When true, the "Scan with ClamHub" context entry becomes a submenu offering
+    /// Report / Quarantine / Remove (the infected-file action for that one scan);
+    /// when false it is a single entry that uses the app default action. Consumed by
+    /// ContextMenuManager (menu shape) and MainWindow (dispatch).
+    /// </summary>
+    public bool ContextMenuScanActionSelectable { get; set; } = false;
 
     /// <summary>Resolved thread count. Called from ConfigManager when writing clamd.conf.</summary>
     public int EffectiveMaxThreads()

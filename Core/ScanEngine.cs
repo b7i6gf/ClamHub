@@ -17,6 +17,14 @@ public static class ScanEngine
     /// <summary>What to scan. Path covers files, folders and whole drives.</summary>
     public enum ScanMode { Path, Memory }
 
+    /// <summary>
+    /// How a scan should treat the clamd daemon: Auto = use it only if it already
+    /// runs (never start it), EnsureDaemon = start it first if needed (context menu
+    /// "Scan with ClamHub" with prefer on), Standalone = always clamscan ("Scan w/o
+    /// daemon", the only way per-scan exclusions take effect).
+    /// </summary>
+    public enum DaemonUsage { Auto, EnsureDaemon, Standalone }
+
     /// <summary>All parameters for one scan run. Built by the UI from its inputs.</summary>
     public record ScanOptions(
         ScanMode Mode,
@@ -27,7 +35,8 @@ public static class ScanEngine
         bool StopInfectedProcesses,
         IReadOnlyList<string>? ExcludeDirectories = null,
         IReadOnlyList<string>? ExcludeExtensions = null,
-        IReadOnlyList<string>? ExcludeFiles = null);
+        IReadOnlyList<string>? ExcludeFiles = null,
+        DaemonUsage DaemonMode = DaemonUsage.Auto);
 
     /// <summary>Outcome of a scan. InfectedLines holds the raw FOUND lines.</summary>
     public record ScanResult(
@@ -65,35 +74,46 @@ public static class ScanEngine
         }
 
         ScanInProgress = true;
+        // Hoisted so the cancellation path can report which scanner actually ran
+        // (clamdscan vs clamscan) instead of defaulting to false.
+        bool useDaemon = false;
         try
         {
-            // The daemon honours the PERSISTENT default exclusions via clamd.conf
-            // but ignores any extra per-scan excludes. So only exclusions BEYOND
-            // the defaults force the (slower) clamscan path; a scan whose excludes
-            // are just the defaults can still use the daemon.
-            static bool WithinDefaults(IReadOnlyList<string>? session, List<string> defaults) =>
-                session is not { Count: > 0 }
-                || session.All(s => defaults.Any(d => d.Equals(s, StringComparison.OrdinalIgnoreCase)));
+            var usage = options.DaemonMode;
 
-            bool exclusionsBeyondDefaults =
-                !WithinDefaults(options.ExcludeDirectories, SettingsManager.Current.ExcludeDirectories)
-                || !WithinDefaults(options.ExcludeExtensions, SettingsManager.Current.ExcludeExtensions)
-                || !WithinDefaults(options.ExcludeFiles, SettingsManager.Current.ExcludeFiles);
+            // Whether ANY per-scan exclusions are set (dirs/files/extensions).
+            bool hasExcludes = options.ExcludeDirectories is { Count: > 0 }
+                               || options.ExcludeExtensions is { Count: > 0 }
+                               || options.ExcludeFiles is { Count: > 0 };
 
-            if (exclusionsBeyondDefaults && SettingsManager.Current.UseDaemon && options.Mode == ScanMode.Path)
-                onOutput("Extra per-scan exclusions are set; scanning with clamscan so they take effect (the daemon only knows the default exclusions).");
+            // Exclusions ONLY take effect with "Scan w/o daemon" (Standalone). Any
+            // other scan ignores them, so they no longer force the clamscan path.
+            bool applyExcludes = usage == DaemonUsage.Standalone;
 
-            bool wantDaemon = SettingsManager.Current.UseDaemon
-                              && options.Mode == ScanMode.Path
-                              && (options.IncludeExtensions is not { Count: > 0 })
-                              && !exclusionsBeyondDefaults;
+            if (hasExcludes && options.Mode == ScanMode.Path && !applyExcludes)
+                onOutput("Exclusions are set but only apply to 'Scan w/o daemon'; this scan ignores them.");
 
-            bool useDaemon = wantDaemon && await DaemonController.IsRunningAsync();
-            if (wantDaemon && !useDaemon)
-                onOutput("Daemon not running, falling back to clamscan (slower).");
+            // Whether the daemon COULD serve this scan. The caller's DaemonMode then
+            // decides: Standalone never uses it, EnsureDaemon starts it if needed,
+            // Auto uses it only when it is already running (never starts it).
+            bool canUseDaemon = options.Mode == ScanMode.Path
+                                && (options.IncludeExtensions is not { Count: > 0 });
+
+            useDaemon = false;
+            if (usage != DaemonUsage.Standalone && canUseDaemon)
+            {
+                if (usage == DaemonUsage.EnsureDaemon && !await DaemonController.IsRunningAsync())
+                {
+                    onOutput("Prefer-daemon is on; starting clamd for this scan...");
+                    await DaemonController.StartAsync(onOutput);
+                }
+                useDaemon = await DaemonController.IsRunningAsync();
+                if (usage == DaemonUsage.EnsureDaemon && !useDaemon)
+                    onOutput("Daemon could not be started, falling back to clamscan (slower).");
+            }
 
             string exe = useDaemon ? AppPaths.ClamdScanExe : AppPaths.ClamScanExe;
-            string args = useDaemon ? BuildClamdScanArgs(options) : BuildClamScanArgs(options);
+            string args = useDaemon ? BuildClamdScanArgs(options) : BuildClamScanArgs(options, applyExcludes);
 
             onOutput($"Running: {Path.GetFileName(exe)} {args}");
             var infected = new List<string>();
@@ -121,7 +141,7 @@ public static class ScanEngine
         catch (OperationCanceledException)
         {
             onOutput("Scan cancelled by user.");
-            return new ScanResult(true, -1, false, new(), "Cancelled");
+            return new ScanResult(true, -1, useDaemon, new(), "Cancelled");
         }
         finally
         {
@@ -146,11 +166,12 @@ public static class ScanEngine
     }
 
     /// <summary>
-    /// Builds the clamscan argument string (standalone scanner, fallback and
-    /// the only engine that supports --include and --memory).
+    /// Builds the clamscan argument string (standalone scanner, fallback and the
+    /// only engine that supports --include and --memory). applyExcludes adds the
+    /// per-scan exclusions only when true (Standalone / "Scan w/o daemon").
     /// Called from: RunScanAsync when the daemon is not used.
     /// </summary>
-    private static string BuildClamScanArgs(ScanOptions o)
+    private static string BuildClamScanArgs(ScanOptions o, bool applyExcludes)
     {
         var sb = new StringBuilder();
 
@@ -169,30 +190,33 @@ public static class ScanEngine
             foreach (var ext in o.IncludeExtensions)
                 sb.Append($"--include=\\.{ext}$ ");
 
-        // Per-scan exclusions for clamscan. These come from the scan-session set
-        // (which starts as a copy of the persistent settings defaults). The
-        // daemon cannot take per-scan excludes; it uses clamd.conf ExcludePath.
-        if (o.ExcludeDirectories is { Count: > 0 })
-            foreach (var dir in o.ExcludeDirectories)
-            {
-                var trimmed = dir?.Trim();
-                if (!string.IsNullOrEmpty(trimmed))
-                    sb.Append($"--exclude-dir=\"^{Regex.Escape(trimmed)}\" ");
-            }
-        if (o.ExcludeExtensions is { Count: > 0 })
-            foreach (var ext in o.ExcludeExtensions)
-            {
-                var clean = ext?.Trim().TrimStart('.');
-                if (!string.IsNullOrEmpty(clean))
-                    sb.Append($"--exclude=\"{ExtensionRegex(clean)}\" ");
-            }
-        if (o.ExcludeFiles is { Count: > 0 })
-            foreach (var file in o.ExcludeFiles)
-            {
-                var trimmed = file?.Trim();
-                if (!string.IsNullOrEmpty(trimmed))
-                    sb.Append($"--exclude=\"^{Regex.Escape(trimmed)}$\" ");
-            }
+        // Per-scan exclusions for clamscan, applied ONLY for "Scan w/o daemon"
+        // (Standalone). Any other scan ignores them. They come from the scan-session
+        // set (which starts as a copy of the persistent settings defaults).
+        if (applyExcludes)
+        {
+            if (o.ExcludeDirectories is { Count: > 0 })
+                foreach (var dir in o.ExcludeDirectories)
+                {
+                    var trimmed = dir?.Trim();
+                    if (!string.IsNullOrEmpty(trimmed))
+                        sb.Append($"--exclude-dir=\"^{Regex.Escape(trimmed)}\" ");
+                }
+            if (o.ExcludeExtensions is { Count: > 0 })
+                foreach (var ext in o.ExcludeExtensions)
+                {
+                    var clean = ext?.Trim().TrimStart('.');
+                    if (!string.IsNullOrEmpty(clean))
+                        sb.Append($"--exclude=\"{ExtensionRegex(clean)}\" ");
+                }
+            if (o.ExcludeFiles is { Count: > 0 })
+                foreach (var file in o.ExcludeFiles)
+                {
+                    var trimmed = file?.Trim();
+                    if (!string.IsNullOrEmpty(trimmed))
+                        sb.Append($"--exclude=\"^{Regex.Escape(trimmed)}$\" ");
+                }
+        }
 
         AppendAction(sb, o.Action);
         sb.Append($"\"{o.TargetPath}\"");

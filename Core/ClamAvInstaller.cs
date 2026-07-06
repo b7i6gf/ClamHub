@@ -36,14 +36,17 @@ public static class ClamAvInstaller
 
     /// <summary>
     /// Downloads the zip at downloadUrl to a temp file (reporting byte progress via
-    /// onProgress), then extracts the full package into AppPaths.ClamAvDir. Reports
-    /// status text via onOutput. Returns true only if all required executables ended
-    /// up in place. The caller must stop any running ClamAV process first so the
-    /// files are not locked. knownSize (the asset size from GitHub) is used as the
-    /// total when the server sends no Content-Length. Called from: UpdateCheckWindow.
+    /// onProgress), verifies its SHA256 against expectedDigest ("sha256:hex"; a
+    /// missing digest only logs "cannot verify"), then extracts the full package into
+    /// AppPaths.ClamAvDir. Reports status text via onOutput. Returns true only if all
+    /// required executables ended up in place. The caller must stop any running ClamAV
+    /// process first so the files are not locked. knownSize (the asset size from
+    /// GitHub) is used as the total when the server sends no Content-Length.
+    /// Called from: UpdateCheckWindow and MainWindow's first-run setup prompt.
     /// </summary>
     public static async Task<bool> DownloadAndExtractAsync(string downloadUrl, long knownSize,
-        Action<string> onOutput, Action<long, long?> onProgress, CancellationToken cancel = default)
+        string? expectedDigest, Action<string> onOutput, Action<long, long?> onProgress,
+        CancellationToken cancel = default)
     {
         string tempZip = Path.Combine(Path.GetTempPath(), $"clamav_dl_{Guid.NewGuid():N}.zip");
         try
@@ -74,6 +77,13 @@ public static class ClamAvInstaller
                 }
                 onProgress(copied, total); // final value
             }
+
+            // Verify the downloaded package against the published SHA256 before
+            // extracting, so a corrupted or tampered zip is never unpacked into the
+            // ClamAV folder. A missing digest only logs "cannot verify" and continues.
+            onProgress(-1, null);
+            if (!await HashTool.VerifyFileDigestAsync(tempZip, expectedDigest, onOutput, cancel))
+                return false;
 
             Directory.CreateDirectory(AppPaths.ClamAvDir);
             onOutput("Extracting ClamAV...");

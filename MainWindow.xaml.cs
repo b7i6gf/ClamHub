@@ -157,12 +157,19 @@ public partial class MainWindow : Window
         InitializeConsoleView();
         ResetSessionExclusions();
         UpdateQueueIndicator();
+        StartDaemonHeartbeat();
+
+        // Start listening for forwarded context menu requests as early as possible
+        // (right after the UI is usable), BEFORE the slow signature update below, so
+        // a right-click launched during startup can always reach us. Requests that
+        // arrive before initialization finishes are queued and drained at the end.
+        SingleInstance.StartServer(msg => Dispatcher.Invoke(() => OnForwardedRequest(msg)));
 
         if (IsElevated())
         {
             AdminRestartButton.IsEnabled = false;
             AdminRestartButton.Content = "Admin mode";
-            Title = "ClamHub 1.0.1 (Administrator)";
+            Title = "ClamHub 1.0.2 (Administrator)";
         }
 
         var info = await UpdateManager.GetVersionInfoAsync();
@@ -193,23 +200,50 @@ public partial class MainWindow : Window
             if (updated != null) _versionInfo = updated;
         }
 
-        if (SettingsManager.Current.AutoStartDaemon && SettingsManager.Current.UseDaemon)
-            await RunGuarded(() => DaemonController.StartAsync(AppendLine));
-
         await RefreshDaemonStatusAsync();
 
-        // Listen for scan requests forwarded by further ClamHub launches.
-        SingleInstance.StartServer(msg => Dispatcher.Invoke(() => OnForwardedRequest(msg)));
+        // Initialization done: run this launch's own action (if any), then any
+        // requests that were forwarded by other launches while we were starting up.
+        _initComplete = true;
 
-        // Launched from the Windows context menu with a path: prefill and scan.
-        if (!string.IsNullOrWhiteSpace(App.StartupScanPath))
-            await StartContextMenuScan(App.StartupScanPath);
+        if (!string.IsNullOrWhiteSpace(App.StartupActionPath))
+            await DispatchContextAction(App.StartupActionId ?? "scan", App.StartupActionPath, App.StartupInfectedAction);
+
+        await DrainPendingRequests();
+
+        // "Start daemon on startup" is intentionally LOWER priority: it runs after
+        // the launch action above (so a context Compute Hash / VirusTotal / Add to
+        // Queue / Exclude is never delayed by it) and in the background, independent
+        // of "Prefer daemon for scans".
+        _ = StartDaemonOnStartupAsync();
     }
 
     /// <summary>
-    /// Handles a request forwarded from a second ClamHub launch: brings this
-    /// window to the front and, if a real path was sent, starts a scan.
-    /// Called from: the SingleInstance pipe server (on the UI thread).
+    /// Background daemon auto-start on launch (setting "Start daemon on startup").
+    /// Runs without the busy guard so it never blocks foreground actions; the
+    /// StartAsync lock prevents a double start with a prefer-daemon scan.
+    /// Called from: the end of InitializeAsync (fire-and-forget).
+    /// </summary>
+    private async Task StartDaemonOnStartupAsync()
+    {
+        try
+        {
+            if (!SettingsManager.Current.AutoStartDaemon) return;
+            if (!await DaemonController.IsRunningAsync())
+                await DaemonController.StartAsync(AppendLine);
+            await RefreshDaemonStatusAsync();
+        }
+        catch
+        {
+            // A failed background start must not crash the app.
+        }
+    }
+
+    /// <summary>
+    /// Handles a request forwarded from a second ClamHub launch: brings this window
+    /// to the front and runs the request. Requests that arrive before startup has
+    /// finished are queued and drained once InitializeAsync completes, so nothing is
+    /// lost. Called from: the SingleInstance pipe server (on the UI thread).
     /// </summary>
     private async void OnForwardedRequest(string message)
     {
@@ -217,19 +251,186 @@ public partial class MainWindow : Window
         Activate();
         Topmost = true; Topmost = false; // nudge to foreground without staying on top
 
-        if (message != SingleInstance.ActivateMessage && !string.IsNullOrWhiteSpace(message)
-            && !_busy)
-            await StartContextMenuScan(message);
+        if (!SingleInstance.TryParseRequest(message, out var actionId, out var path, out var infected))
+            return;
+
+        if (!_initComplete)
+        {
+            _pendingRequests.Add((actionId, path, infected));
+            return;
+        }
+        await DispatchContextAction(actionId, path, infected);
     }
 
     /// <summary>
-    /// Prefills the scan target from a context menu launch and starts a scan
-    /// with the configured default action. Called from: InitializeAsync.
+    /// Runs any context requests that were forwarded while the app was still
+    /// initializing (see OnForwardedRequest). Called from: the end of InitializeAsync.
     /// </summary>
-    private async Task StartContextMenuScan(string path)
+    private async Task DrainPendingRequests()
+    {
+        if (_pendingRequests.Count == 0) return;
+        var pending = _pendingRequests.ToList();
+        _pendingRequests.Clear();
+        foreach (var (id, path, infected) in pending)
+            await DispatchContextAction(id, path, infected);
+    }
+
+    /// <summary>
+    /// Routes a context menu action (by id) to its handler. For "scan", an optional
+    /// infected-file action (report/quarantine/remove) overrides the app default for
+    /// that scan. New context menu options are added here and in
+    /// Core.ContextMenuManager.Actions; nothing else needs to change. Called from:
+    /// InitializeAsync (a startup launch), OnForwardedRequest and DrainPendingRequests.
+    /// </summary>
+    // Serializes context menu actions so several files selected together in Explorer
+    // (each launches its own ClamHub process that forwards a request over the pipe)
+    // are handled strictly one after another. Without it the async hash/VT handlers
+    // interleave at their await points and their console blocks get mixed (all
+    // section titles first, then all results). Held only inside DispatchContextAction.
+    private readonly System.Threading.SemaphoreSlim _contextActionGate = new(1, 1);
+
+    private async Task DispatchContextAction(string actionId, string path, string? infected = null)
+    {
+        path = path.Trim().Trim('"');
+
+        // One action at a time: a file's title, calculation and trailing spacing are
+        // written as one uninterrupted block before the next file starts. The wait
+        // resumes on the UI thread, so all handlers below stay UI-thread safe; the
+        // "scan" case returns immediately (only arms the debounce timer) and the
+        // startup/DrainPendingRequests callers are already sequential, so no deadlock.
+        await _contextActionGate.WaitAsync();
+        try
+        {
+            switch (actionId.ToLowerInvariant())
+            {
+                case "scan": QueueContextScan(path, ParseInfectedAction(infected)); break;
+                case "queue": StartContextMenuAddToQueue(path); break;
+                case "hash": await StartContextMenuHash(path); break;
+                case "vt": await StartContextMenuVirusTotal(path); break;
+                case "exclude": await AddPermanentExclusion(path); break;
+                default:
+                    AppendSection("CONTEXT MENU");
+                    AppendLine($"Unknown context action: {actionId}");
+                    break;
+            }
+        }
+        finally
+        {
+            _contextActionGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Maps an "--infected" value to the enum, or null when absent/unrecognized (so
+    /// the caller uses the app default action). Called from: DispatchContextAction.
+    /// </summary>
+    private static InfectedFileAction? ParseInfectedAction(string? value)
+        => value?.Trim().ToLowerInvariant() switch
+        {
+            "report" => InfectedFileAction.ReportOnly,
+            "quarantine" => InfectedFileAction.Quarantine,
+            "remove" => InfectedFileAction.Remove,
+            _ => null
+        };
+
+    // Context "scan" requests are debounced so a multi-file Explorer selection
+    // (which launches ClamHub once per file) is gathered into ONE scan run.
+    private readonly List<string> _contextScanPaths = new();
+    private InfectedFileAction? _contextScanAction;
+    private System.Windows.Threading.DispatcherTimer? _contextScanTimer;
+
+    /// <summary>
+    /// Collects a context "Scan with ClamHub" path and (re)arms a short debounce
+    /// timer; when a multi-selection fires several launches in quick succession they
+    /// all land here and are scanned together on the tick. Called from:
+    /// DispatchContextAction (the "scan" case).
+    /// </summary>
+    private void QueueContextScan(string path, InfectedFileAction? action)
+    {
+        _contextScanPaths.Add(path);
+        if (action.HasValue) _contextScanAction = action;
+
+        _contextScanTimer ??= CreateContextScanTimer();
+        _contextScanTimer.Stop();
+        _contextScanTimer.Start();
+    }
+
+    /// <summary>
+    /// Builds the one-shot debounce timer that runs the gathered context-scan paths.
+    /// Called from: QueueContextScan (lazily, once).
+    /// </summary>
+    private System.Windows.Threading.DispatcherTimer CreateContextScanTimer()
+    {
+        var timer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(600)
+        };
+        timer.Tick += async (_, _) =>
+        {
+            timer.Stop();
+            var paths = _contextScanPaths.ToList();
+            _contextScanPaths.Clear();
+            var action = _contextScanAction;
+            _contextScanAction = null;
+            await RunContextScan(paths, action);
+        };
+        return timer;
+    }
+
+    /// <summary>
+    /// Runs the gathered context-scan paths: a single new path onto an empty queue
+    /// is scanned directly (classic behavior); otherwise all new paths are appended
+    /// to the queue and the whole queue is scanned. An optional infected-file action
+    /// overrides the app default (reflected in the action combo so single and queue
+    /// scans use it). Called from: the context-scan debounce timer.
+    /// </summary>
+    private async Task RunContextScan(List<string> paths, InfectedFileAction? action)
     {
         MainTabs.SelectedIndex = 0;
-        TargetBox.Text = path.Trim();
+        if (action.HasValue) ActionCombo.SelectedIndex = (int)action.Value;
+
+        // "Prefer daemon for scans" applies ONLY to context menu scans: on -> ensure
+        // the daemon (start it if needed); off -> standalone clamscan.
+        var daemonMode = SettingsManager.Current.UseDaemon
+            ? ScanEngine.DaemonUsage.EnsureDaemon
+            : ScanEngine.DaemonUsage.Standalone;
+
+        var valid = paths
+            .Where(p => System.IO.File.Exists(p) || System.IO.Directory.Exists(p))
+            .Where(p => !_queue.Any(q => q.Equals(p, StringComparison.OrdinalIgnoreCase)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (valid.Count == 0 && _queue.Count == 0)
+        {
+            AppendSection("SCAN");
+            AppendLine("Nothing to scan (paths missing or already queued).");
+            return;
+        }
+
+        // One new path with an empty queue keeps the classic single-file scan.
+        if (_queue.Count == 0 && valid.Count == 1)
+        {
+            await StartSingleScan(valid[0], daemonMode);
+            return;
+        }
+
+        foreach (var p in valid) _queue.Add(p);
+        UpdateQueueIndicator();
+
+        bool hadProfile = ActiveProfileName != null;
+        await RunQueueScan(_queue.ToList(), daemonMode);
+        if (hadProfile) SelectNoProfile();
+    }
+
+    /// <summary>
+    /// Scans a single path directly with the configured default action (no queue).
+    /// daemonMode controls whether the daemon is used/started. Called from: RunContextScan.
+    /// </summary>
+    private async Task StartSingleScan(string path, ScanEngine.DaemonUsage daemonMode)
+    {
+        MainTabs.SelectedIndex = 0;
+        TargetBox.Text = path;
         var options = new ScanEngine.ScanOptions(
             ScanEngine.ScanMode.Path,
             TargetBox.Text,
@@ -239,8 +440,171 @@ public partial class MainWindow : Window
             false,
             _sessionExcludeDirs,
             _sessionExcludeExts,
-            _sessionExcludeFiles);
+            _sessionExcludeFiles,
+            daemonMode);
         await RunScanGuarded(options);
+    }
+
+    /// <summary>
+    /// Context menu "Add to Queue": switches to the Scan tab and adds the path to
+    /// the scan queue without starting a scan. Called from: DispatchContextAction.
+    /// </summary>
+    private void StartContextMenuAddToQueue(string path)
+    {
+        MainTabs.SelectedIndex = 0;
+        AppendSection("QUEUE");
+        if (!System.IO.File.Exists(path) && !System.IO.Directory.Exists(path))
+        {
+            AppendLine($"Cannot add to queue, path not found: {path}");
+            return;
+        }
+        if (!_queue.Any(x => x.Equals(path, StringComparison.OrdinalIgnoreCase)))
+            _queue.Add(path);
+        UpdateQueueIndicator();
+        AppendLine($"Added to scan queue ({_queue.Count} total): {path}");
+    }
+
+    /// <summary>
+    /// Adds several file/folder paths to the scan queue (existing + not already
+    /// queued), without starting a scan. Used when multiple items are dropped on the
+    /// Scan target. Called from: PathBox_PreviewDrop.
+    /// </summary>
+    private void AddPathsToQueue(IEnumerable<string> paths)
+    {
+        MainTabs.SelectedIndex = 0;
+        AppendSection("QUEUE");
+        int added = 0;
+        foreach (var raw in paths)
+        {
+            var p = raw.Trim().Trim('"');
+            if (!System.IO.File.Exists(p) && !System.IO.Directory.Exists(p)) continue;
+            if (_queue.Any(x => x.Equals(p, StringComparison.OrdinalIgnoreCase))) continue;
+            _queue.Add(p);
+            AppendLine($"Added to queue: {p}");
+            added++;
+        }
+        AppendLine(added == 0
+            ? "Nothing added (paths missing or already queued)."
+            : $"Queue now has {_queue.Count} item(s).");
+        UpdateQueueIndicator();
+    }
+
+    /// <summary>
+    /// Context menu "Compute Hash": switches to the Hash Verifier tab and computes
+    /// all hashes of the file (only single files can be hashed).
+    /// Called from: DispatchContextAction.
+    /// </summary>
+    private async Task StartContextMenuHash(string path)
+    {
+        MainTabs.SelectedIndex = 1; // Hash Verifier tab
+        if (!System.IO.File.Exists(path))
+        {
+            AppendSection("HASH");
+            AppendLine($"Hash: not a file (folders cannot be hashed): {path}");
+            return;
+        }
+        HashFileBox.Text = path;
+        ExpectedHashBox.Clear();
+        SelectHashAlgo("All");
+        await ComputeHashAsync(path, "All", "");
+    }
+
+    /// <summary>
+    /// Context menu "VT Report": switches to the Hash Verifier tab and looks the
+    /// file up on VirusTotal (hash only). Requires an API key and a single file;
+    /// RunVirusTotalLookup re-checks the key itself.
+    /// Called from: DispatchContextAction.
+    /// </summary>
+    private async Task StartContextMenuVirusTotal(string path)
+    {
+        MainTabs.SelectedIndex = 1; // Hash Verifier tab
+        if (!System.IO.File.Exists(path))
+        {
+            AppendSection("VIRUSTOTAL");
+            AppendLine($"VirusTotal: not a file (folders cannot be looked up): {path}");
+            return;
+        }
+        HashFileBox.Text = path;
+        await RunVirusTotalLookup(path, path);
+    }
+
+    /// <summary>
+    /// Selects the given algorithm in the hash combo by its item content, so the
+    /// UI reflects a hash started from the context menu.
+    /// Called from: StartContextMenuHash.
+    /// </summary>
+    private void SelectHashAlgo(string algo)
+    {
+        foreach (var item in HashAlgoCombo.Items)
+            if (item is System.Windows.Controls.ComboBoxItem ci
+                && string.Equals(ci.Content?.ToString(), algo, StringComparison.OrdinalIgnoreCase))
+            {
+                HashAlgoCombo.SelectedItem = item;
+                return;
+            }
+    }
+
+    /// <summary>
+    /// Adds one file or folder to the PERSISTENT default exclusions: updates
+    /// settings.json (ExcludeFiles for a file, ExcludeDirectories for a folder,
+    /// de-duplicated), rewrites the clamd.conf managed block, refreshes the session
+    /// copy, and offers a daemon restart when one is running. Mirrors the Settings
+    /// ExcludePath flow but for a single path. Called from: DispatchContextAction
+    /// (the "Exclude Path" context menu entry).
+    /// </summary>
+    private async Task AddPermanentExclusion(string path)
+    {
+        AppendSection("DEFAULT EXCLUSIONS");
+
+        bool isDir = System.IO.Directory.Exists(path);
+        bool isFile = System.IO.File.Exists(path);
+        if (!isDir && !isFile)
+        {
+            AppendLine($"Cannot exclude, path not found: {path}");
+            return;
+        }
+
+        var list = isDir
+            ? SettingsManager.Current.ExcludeDirectories
+            : SettingsManager.Current.ExcludeFiles;
+
+        if (list.Any(p => p.Equals(path, StringComparison.OrdinalIgnoreCase)))
+        {
+            AppendLine($"Already in the default exclusions: {path}");
+            return;
+        }
+
+        // Confirm before writing. This action can be triggered by any local process
+        // forwarding an "exclude" request over the pipe (or launching us with an
+        // exclude argument), which could silently hide a folder from scans. Making it
+        // an explicit prompt closes that and turns a genuine right-click into a
+        // deliberate choice. The context-action gate serializes multi-file launches,
+        // so prompts appear one at a time rather than stacking.
+        var confirm = new MessageDialog(
+            "Add permanent exclusion?",
+            $"Add this {(isDir ? "folder" : "file")} to the permanent scan exclusions?\n\n{path}\n\n" +
+            "Excluded paths are skipped in future scans. Only confirm if you started this yourself.",
+            "Add exclusion", "Cancel") { Owner = this };
+        if (confirm.ShowDialog() != true)
+        {
+            AppendLine($"Exclusion cancelled: {path}");
+            return;
+        }
+
+        list.Add(path);
+        SettingsManager.Save();
+        ResetSessionExclusions();
+
+        try { ConfigManager.WriteClamdExclusions(); }
+        catch (Exception ex) { AppendLine($"clamd.conf update failed: {ex.Message}"); return; }
+
+        AppendLine($"Added {(isDir ? "folder" : "file")} to permanent exclusions: {path}");
+
+        // No modal prompt here: this runs from a (possibly multi-file) context menu
+        // launch and could stack dialogs or be shown while another modal window is
+        // open, which blocks input. Just note how to apply it.
+        if (await DaemonController.IsRunningAsync(1000))
+            AppendLine("Note: this applies to standalone 'Scan w/o daemon' scans. For daemon scans, restart the daemon (Stop then Start on the Scan tab).");
     }
 
     /// <summary>
@@ -253,12 +617,19 @@ public partial class MainWindow : Window
         AppendSection("STARTUP");
         AppendLine(c is { FreshClamCreated: true } ? "freshclam.conf created" : "freshclam.conf found");
         AppendLine(c is { ClamdCreated: true } ? "clamd.conf created" : "clamd.conf found");
-        AppendLine("settings.json loaded");
+
+        // One line only when settings.json could not be read (SettingsManager fell
+        // back to defaults). The broken file is left untouched; saving from the
+        // Settings tab overwrites it with the current values.
+        if (SettingsManager.LoadError != null)
+            AppendLine("Settings.json corrupted - defaults reloaded");
+        else
+            AppendLine("settings.json loaded");
     }
 
     /// <summary>
     /// Updates the daemon status indicator (dot color and text).
-    /// Called from: InitializeAsync and after every guarded action.
+    /// Called from: InitializeAsync, the heartbeat timer and after every guarded action.
     /// </summary>
     private async Task RefreshDaemonStatusAsync()
     {
@@ -269,6 +640,30 @@ public partial class MainWindow : Window
             : "Daemon: not running";
         StartDaemonButton.IsEnabled = !running && !_busy;
         StopDaemonButton.IsEnabled = running && !_busy;
+    }
+
+    private System.Windows.Threading.DispatcherTimer? _daemonHeartbeatTimer;
+
+    /// <summary>
+    /// Starts a periodic status refresh so the indicator reflects clamd stopping on
+    /// its own (crash, external kill, PC sleep), not only after a user action which
+    /// was the previous behavior. Skips a tick while a guarded operation runs (that
+    /// path refreshes on its own and IsRunningAsync there would just add noise).
+    /// Called from: InitializeAsync.
+    /// </summary>
+    private void StartDaemonHeartbeat()
+    {
+        if (_daemonHeartbeatTimer != null) return;
+        _daemonHeartbeatTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(5)
+        };
+        _daemonHeartbeatTimer.Tick += async (_, _) =>
+        {
+            if (_busy) return;
+            await RefreshDaemonStatusAsync();
+        };
+        _daemonHeartbeatTimer.Start();
     }
 
     /// <summary>
@@ -379,20 +774,54 @@ public partial class MainWindow : Window
                 ok ? "OkBrush" : "DangerBrush");
         });
 
-    /// <summary>File picker for the scan target. Called from: XAML Click binding.</summary>
-    private void BrowseFile_Click(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Clears the text box referenced by the clicked button's Tag (the X buttons on
+    /// the Target, Hash File and Expected boxes). Called from: XAML Click bindings.
+    /// </summary>
+    private void ClearTextBox_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFileDialog { Title = "Select file to scan" };
-        if (dialog.ShowDialog() == true)
-            TargetBox.Text = dialog.FileName;
+        if (sender is System.Windows.Controls.Button { Tag: System.Windows.Controls.TextBox box })
+            box.Clear();
     }
 
-    /// <summary>Folder picker for the scan target. Called from: XAML Click binding.</summary>
-    private void BrowseFolder_Click(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Opens the small "Choose files / Choose folder" popup under the Scan "File..."
+    /// button (a single native dialog cannot pick both files and folders).
+    /// Called from: XAML Click binding.
+    /// </summary>
+    private void ScanBrowse_Click(object sender, RoutedEventArgs e)
+        => ScanBrowsePopup.IsOpen = true;
+
+    /// <summary>
+    /// Scan "Choose files...": picks one or more files; a single file fills the
+    /// Target box, several are added to the queue. Called from: the browse popup.
+    /// </summary>
+    private void ScanChooseFiles_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFolderDialog { Title = "Select folder or drive to scan" };
-        if (dialog.ShowDialog() == true)
-            TargetBox.Text = dialog.FolderName;
+        ScanBrowsePopup.IsOpen = false;
+        var dialog = new OpenFileDialog { Title = "Select file(s) to scan", Multiselect = true };
+        if (dialog.ShowDialog() != true) return;
+
+        if (dialog.FileNames.Length == 1)
+            TargetBox.Text = dialog.FileNames[0];
+        else if (dialog.FileNames.Length > 1)
+            AddPathsToQueue(dialog.FileNames);
+    }
+
+    /// <summary>
+    /// Scan "Choose folder...": picks a folder or drive into the Target box.
+    /// Called from: the browse popup.
+    /// </summary>
+    private void ScanChooseFolder_Click(object sender, RoutedEventArgs e)
+    {
+        ScanBrowsePopup.IsOpen = false;
+        var dialog = new OpenFolderDialog { Title = "Select folder(s) or drive to scan", Multiselect = true };
+        if (dialog.ShowDialog() != true) return;
+
+        if (dialog.FolderNames.Length == 1)
+            TargetBox.Text = dialog.FolderNames[0];
+        else if (dialog.FolderNames.Length > 1)
+            AddPathsToQueue(dialog.FolderNames);
     }
 
     /// <summary>
@@ -403,6 +832,12 @@ public partial class MainWindow : Window
     /// <summary>The integrated scan queue (session-persistent). Built via the Target [+] button / Enter
     /// and the queue window; scanned by the global Start scan when not empty.</summary>
     private readonly List<string> _queue = new();
+
+    /// <summary>True once InitializeAsync has finished; gates deferred context requests.</summary>
+    private bool _initComplete;
+
+    /// <summary>Context requests forwarded before startup finished; drained afterwards.</summary>
+    private readonly List<(string id, string path, string? infected)> _pendingRequests = new();
 
     /// <summary>
     /// Opens the queue window seeded with the current queue, syncs any edits back
@@ -421,7 +856,7 @@ public partial class MainWindow : Window
         if (window.ScanRequested && _queue.Count > 0)
         {
             bool hadProfile = ActiveProfileName != null;
-            await RunQueueScan(_queue.ToList());
+            await RunQueueScan(_queue.ToList(), ScanEngine.DaemonUsage.Auto);
             if (hadProfile) SelectNoProfile();
         }
     }
@@ -477,16 +912,32 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Global Start scan: runs the whole queue when it has entries, otherwise a
-    /// single scan of the Target box. Called from: XAML Click binding.
+    /// Global "Start scan": in-app scan using the daemon only if it already runs
+    /// (Auto, never starts it). Called from: XAML Click binding.
     /// </summary>
     private async void Scan_Click(object sender, RoutedEventArgs e)
+        => await RunUiScan(ScanEngine.DaemonUsage.Auto);
+
+    /// <summary>
+    /// "Scan w/o daemon": same scan but always with standalone clamscan, so per-scan
+    /// exclusions take effect. Called from: XAML Click binding.
+    /// </summary>
+    private async void ScanNoDaemon_Click(object sender, RoutedEventArgs e)
+        => await RunUiScan(ScanEngine.DaemonUsage.Standalone);
+
+    /// <summary>
+    /// Runs the in-app Scan-tab scan: the whole queue when it has entries, otherwise
+    /// a single scan of the Target box. daemonMode is Auto ("Start scan") or
+    /// Standalone ("Scan w/o daemon"); in-app scans never start the daemon.
+    /// Called from: Scan_Click and ScanNoDaemon_Click.
+    /// </summary>
+    private async Task RunUiScan(ScanEngine.DaemonUsage daemonMode)
     {
         bool hadProfile = ActiveProfileName != null;
 
         if (_queue.Count > 0)
         {
-            await RunQueueScan(_queue.ToList());
+            await RunQueueScan(_queue.ToList(), daemonMode);
         }
         else
         {
@@ -499,7 +950,8 @@ public partial class MainWindow : Window
                 false,
                 _sessionExcludeDirs,
                 _sessionExcludeExts,
-                _sessionExcludeFiles);
+                _sessionExcludeFiles,
+                daemonMode);
 
             await RunScanGuarded(options);
         }
@@ -536,12 +988,12 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Runs every queued target in turn in the main console (each with its normal
-    /// per-scan summary), using the current Scan-tab settings (action, extensions
-    /// and session exclusions), then prints a combined QUEUE SUMMARY. A cancelled
-    /// scan stops the rest of the queue. Wrapped in one RunGuarded so the whole
-    /// batch is a single busy operation. Called from: ScanQueue_Click.
+    /// per-scan summary), then prints a combined QUEUE SUMMARY. daemonMode is passed
+    /// to each target's scan (Auto for in-app runs, EnsureDaemon/Standalone for a
+    /// context menu scan). A cancelled scan stops the rest of the queue. Wrapped in
+    /// one RunGuarded. Called from: ScanQueue_Click, RunUiScan and RunContextScan.
     /// </summary>
-    private async Task RunQueueScan(IReadOnlyList<string> targets)
+    private async Task RunQueueScan(IReadOnlyList<string> targets, ScanEngine.DaemonUsage daemonMode)
         => await RunGuarded(async () =>
         {
             var action = (InfectedFileAction)ActionCombo.SelectedIndex;
@@ -565,7 +1017,8 @@ public partial class MainWindow : Window
                     false,
                     _sessionExcludeDirs,
                     _sessionExcludeExts,
-                    _sessionExcludeFiles);
+                    _sessionExcludeFiles,
+                    daemonMode);
 
                 // record:false - the queue is logged as one combined entry below.
                 var result = await ScanOneAsync(options, record: false);
@@ -608,6 +1061,17 @@ public partial class MainWindow : Window
             : $"SCAN  {options.TargetPath}";
         AppendSection(title);
 
+        // Heads-up for a whole-drive scan while file counting is on: counting the
+        // drive afterwards can add noticeable time and can be disabled in Settings.
+        // Emitted upfront so it appears even when the scan is cancelled (P3: inform,
+        // never block the feature).
+        if (options.Mode == ScanEngine.ScanMode.Path
+            && SettingsManager.Current.CountFilesOnDaemonScan
+            && !string.IsNullOrWhiteSpace(options.TargetPath)
+            && IsDriveRoot(options.TargetPath!))
+            AppendLine("Note: whole-drive scan. Counting files afterwards can take a while; " +
+                       "you can turn \"Count files on daemon scans\" off in Settings.");
+
         InfectedCountText.Text = "";
         _scanCts = new CancellationTokenSource();
         CancelScanButton.IsEnabled = true;
@@ -646,9 +1110,11 @@ public partial class MainWindow : Window
             AppendLine($"Duration: {watch.Elapsed:hh\\:mm\\:ss\\.f}");
             AppendLine($"Scanner:  {(result.UsedDaemon ? "clamdscan (daemon, parallel)" : "clamscan")}");
 
-            // clamdscan does not report a scanned-file count; optionally add
-            // it by counting the target on a background thread (no scan slowdown).
-            if (result.UsedDaemon && options.Mode == ScanEngine.ScanMode.Path
+            // clamdscan does not report a scanned-file count; optionally add it by
+            // counting the target on a background thread. Skipped on a cancelled scan
+            // (result.Error set) so a whole drive the user just aborted is not counted.
+            if (result.UsedDaemon && result.Error == null
+                && options.Mode == ScanEngine.ScanMode.Path
                 && SettingsManager.Current.CountFilesOnDaemonScan
                 && !string.IsNullOrWhiteSpace(options.TargetPath))
             {
@@ -656,12 +1122,12 @@ public partial class MainWindow : Window
                 AppendLine($"Files in target: {fileCount}");
             }
 
-            AppendLine($"Result:   {result.ExitCode switch
+            AppendLine($"Result:   {(result.Error == "Cancelled" ? "CANCELLED" : result.ExitCode switch
             {
                 0 => "CLEAN",
                 1 => "INFECTIONS FOUND",
                 _ => $"COMPLETED WITH ERRORS (exit code {result.ExitCode}, see log)"
-            }}");
+            })}");
 
             int found = result.InfectedLines.Count;
             if (found == 0)
@@ -708,6 +1174,28 @@ public partial class MainWindow : Window
             CancelScanButton.IsEnabled = false;
             _scanCts.Dispose();
             _scanCts = null;
+        }
+    }
+
+    /// <summary>
+    /// True when the path is a drive root like "C:\" (a whole-drive scan target),
+    /// where counting files is expensive. Called from: ScanOneAsync's file count.
+    /// </summary>
+    private static bool IsDriveRoot(string path)
+    {
+        try
+        {
+            var full = System.IO.Path.GetFullPath(path);
+            var root = System.IO.Path.GetPathRoot(full);
+            return !string.IsNullOrEmpty(root) &&
+                   string.Equals(
+                       full.TrimEnd(System.IO.Path.DirectorySeparatorChar),
+                       root.TrimEnd(System.IO.Path.DirectorySeparatorChar),
+                       StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -774,9 +1262,10 @@ public partial class MainWindow : Window
     private void Exclusions_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new ExclusionsWindow(_sessionExcludeDirs, _sessionExcludeFiles, _sessionExcludeExts,
-            "Temporary exclusions for this session. They reset to the Settings defaults "
-            + "on restart or profile change, and apply to clamscan scans (the daemon uses "
-            + "the defaults from Settings). Drag files or folders in to add them.") { Owner = this };
+            "Temporary exclusions for this session (reset to the Settings defaults on restart "
+            + "or profile change). Exclusions apply to standalone clamscan scans only - use "
+            + "'Scan w/o daemon'; daemon scans ignore them. Drag files or folders in to add them.",
+            "Scan exclusions - temporary") { Owner = this };
         if (dialog.ShowDialog() != true) return;
 
         _sessionExcludeDirs = dialog.ResultDirectories;
@@ -785,7 +1274,7 @@ public partial class MainWindow : Window
         AppendSection("SCAN EXCLUSIONS");
         AppendLine($"Session exclusions set: {_sessionExcludeDirs.Count} folder(s), " +
                    $"{_sessionExcludeFiles.Count} file(s), {_sessionExcludeExts.Count} extension(s).");
-        AppendLine("Exclusions beyond the Settings defaults make that scan use clamscan; defaults stay on the daemon.");
+        AppendLine("Exclusions only take effect with 'Scan w/o daemon' (clamscan); daemon scans ignore them.");
     }
 
     /// <summary>
@@ -794,15 +1283,16 @@ public partial class MainWindow : Window
     /// resets the session copy and offers a daemon restart.
     /// Called from: the ExcludePath "Manage list..." button.
     /// </summary>
-    private async void OpenExclusionsFromSettings()
+    private void OpenExclusionsFromSettings()
     {
         var dialog = new ExclusionsWindow(
             SettingsManager.Current.ExcludeDirectories,
             SettingsManager.Current.ExcludeFiles,
             SettingsManager.Current.ExcludeExtensions,
-            "Default exclusions. Always active, including after restart. Used by the "
-            + "daemon (via clamd.conf) and as the starting point for scan-session exclusions. "
-            + "Drag files or folders in to add them.")
+            "Default exclusions and the starting point for scan-session exclusions. They apply "
+            + "to standalone clamscan scans ('Scan w/o daemon'); daemon scans ignore per-scan "
+            + "exclusions. Drag files or folders in to add them.",
+            "Scan exclusions - default")
             { Owner = this };
         if (dialog.ShowDialog() != true) return;
 
@@ -815,24 +1305,9 @@ public partial class MainWindow : Window
         try { ConfigManager.WriteClamdExclusions(); }
         catch (Exception ex) { SetSettingsStatus($"clamd.conf update failed: {ex.Message}", "DangerBrush"); return; }
 
+        // No daemon-restart prompt/console note here: exclusions do not affect daemon
+        // scans (they only apply to standalone "Scan w/o daemon").
         SetSettingsStatus("Default exclusions saved.", "OkBrush");
-        AppendSection("DEFAULT EXCLUSIONS");
-        AppendLine($"Saved {dialog.ResultDirectories.Count} folder(s), {dialog.ResultFiles.Count} file(s) " +
-                   $"and {dialog.ResultExtensions.Count} extension(s) as defaults.");
-
-        if (await DaemonController.IsRunningAsync(1000))
-        {
-            if (Confirm("Restart daemon",
-                    "Default exclusions saved. The daemon must restart to apply them to daemon scans.\n\nRestart the daemon now?",
-                    "Restart", "Not now"))
-                await RunGuarded(async () =>
-                {
-                    await DaemonController.StopAsync(AppendLine);
-                    await DaemonController.StartAsync(AppendLine);
-                });
-            else
-                AppendLine("Note: daemon scans use the new defaults after the next daemon restart.");
-        }
     }
 
     /// <summary>Cancels the running scan. Called from: XAML Click binding.</summary>
@@ -840,29 +1315,46 @@ public partial class MainWindow : Window
         => _scanCts?.Cancel();
 
     /// <summary>
-    /// Allows file drops on path text boxes (TextBox blocks drops by default).
-    /// Called from: XAML PreviewDragOver binding of TargetBox and HashFileBox.
+    /// Allows file drops on path text boxes (TextBox blocks drops by default). The
+    /// Hash box accepts files only, so a folder-only drop is rejected here to show
+    /// the "no drop" cursor. Called from: XAML PreviewDragOver of TargetBox and HashFileBox.
     /// </summary>
     private void PathBox_PreviewDragOver(object sender, DragEventArgs e)
     {
-        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop)
-            ? DragDropEffects.Copy
-            : DragDropEffects.None;
+        bool allow = e.Data.GetDataPresent(DataFormats.FileDrop);
+
+        if (allow && ReferenceEquals(sender, HashFileBox)
+            && e.Data.GetData(DataFormats.FileDrop) is string[] paths)
+            allow = paths.Any(p => System.IO.File.Exists(p));
+
+        e.Effects = allow ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
     /// <summary>
-    /// Writes the first dropped file/folder path into the targeted text box.
-    /// Called from: XAML PreviewDrop binding of TargetBox and HashFileBox.
+    /// Handles a file/folder drop: the Hash box takes the first dropped FILE (folders
+    /// ignored); the Scan target fills its box for a single item or queues them all
+    /// for several. Called from: XAML PreviewDrop of TargetBox and HashFileBox.
     /// </summary>
     private void PathBox_PreviewDrop(object sender, DragEventArgs e)
     {
-        if (sender is System.Windows.Controls.TextBox box
-            && e.Data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } paths)
+        if (e.Data.GetData(DataFormats.FileDrop) is not string[] { Length: > 0 } paths)
+            return;
+        e.Handled = true;
+
+        // Hash tab: files only. Pick the first dropped file, ignore folders.
+        if (ReferenceEquals(sender, HashFileBox))
         {
-            box.Text = paths[0];
-            e.Handled = true;
+            var file = paths.FirstOrDefault(p => System.IO.File.Exists(p));
+            if (file != null) HashFileBox.Text = file;
+            return;
         }
+
+        // Scan target: one item fills the box, several go to the queue.
+        if (paths.Length == 1)
+            TargetBox.Text = paths[0];
+        else
+            AddPathsToQueue(paths);
     }
 
     /// <summary>File picker for the hash tool. Called from: XAML Click binding.</summary>
@@ -874,13 +1366,25 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Computes the selected hash (or all) for the chosen file and optionally
-    /// compares it with the expected value. Results go to the console.
-    /// Called from: XAML Click binding of the Compute button.
+    /// Reads the file, algorithm and expected value from the Hash tab and computes
+    /// the hash. Called from: XAML Click binding of the Compute button.
     /// </summary>
     private async void ComputeHash_Click(object sender, RoutedEventArgs e)
     {
         var path = HashFileBox.Text.Replace("\"", "").Trim();
+        string algo = ((System.Windows.Controls.ComboBoxItem)HashAlgoCombo.SelectedItem)
+            .Content.ToString()!;
+        await ComputeHashAsync(path, algo, ExpectedHashBox.Text);
+    }
+
+    /// <summary>
+    /// Computes one hash (or all) for a file and, when an expected value is given,
+    /// compares them; results go to the console and a history entry is recorded.
+    /// Shared so the "Compute Hash" context menu entry produces identical output.
+    /// Called from: ComputeHash_Click and StartContextMenuHash.
+    /// </summary>
+    private async Task ComputeHashAsync(string path, string algo, string expected)
+    {
         if (!System.IO.File.Exists(path))
         {
             AppendLine($"Hash: file not found: {path}");
@@ -888,11 +1392,21 @@ public partial class MainWindow : Window
         }
 
         ComputeHashButton.IsEnabled = false;
+        // Progress bar + Cancel button are shown only for the duration of the hash,
+        // so large files give feedback and can be aborted. Progress marshals to the
+        // UI thread via Progress<T>.
+        _hashCts = new CancellationTokenSource();
+        var progress = new Progress<double>(f =>
+        {
+            HashProgress.IsIndeterminate = false;
+            HashProgress.Value = f;
+        });
+        HashProgress.Value = 0;
+        HashProgress.Visibility = Visibility.Visible;
+        CancelHashButton.IsEnabled = true;
         try
         {
-            string algo = ((System.Windows.Controls.ComboBoxItem)HashAlgoCombo.SelectedItem)
-                .Content.ToString()!;
-            var expected = ExpectedHashBox.Text;
+            var token = _hashCts.Token;
             bool hasExpected = !string.IsNullOrWhiteSpace(expected);
             AppendSection($"HASH  {path}");
 
@@ -900,12 +1414,18 @@ public partial class MainWindow : Window
             summary.AppendLine($"File: {path}");
             bool matched = false;
 
+            // Distinguish a genuine read failure from a SHA-3 variant that this
+            // Windows build cannot run (SHA-3 needs a recent Windows).
+            static string FailMsg(string a) => HashTool.IsSupported(a)
+                ? "FAILED (file locked or unreadable)"
+                : "not supported on this Windows build";
+
             if (algo == "All")
             {
-                var all = await HashTool.ComputeAllAsync(path);
+                var all = await HashTool.ComputeAllAsync(path, progress, token);
                 foreach (var (name, hash) in all)
                 {
-                    string line = $"{name,-7}: {hash ?? "FAILED (file locked or unreadable)"}";
+                    string line = $"{name,-8}: {hash ?? FailMsg(name)}";
                     AppendLine(line);
                     summary.AppendLine(line);
                 }
@@ -926,12 +1446,12 @@ public partial class MainWindow : Window
             }
             else
             {
-                var hash = await HashTool.ComputeAsync(path, algo);
+                var hash = await HashTool.ComputeAsync(path, algo, progress, token);
                 if (hash == null)
                 {
-                    AppendLine($"{algo}: FAILED (file locked or unreadable)");
+                    AppendLine($"{algo}: {FailMsg(algo)}");
                     AddHistory("Hash compute", path, "", "compute failed",
-                        $"File: {path}{Environment.NewLine}{algo}: FAILED (file locked or unreadable)");
+                        $"File: {path}{Environment.NewLine}{algo}: {FailMsg(algo)}");
                     return;
                 }
                 string hline = $"{algo}: {hash}";
@@ -957,11 +1477,28 @@ public partial class MainWindow : Window
             else
                 AddHistory("Hash compute", path, "", "hash computed", summary.ToString());
         }
+        catch (OperationCanceledException)
+        {
+            AppendLine("Hash cancelled.");
+        }
         finally
         {
+            HashProgress.Visibility = Visibility.Collapsed;
+            CancelHashButton.IsEnabled = false;
             ComputeHashButton.IsEnabled = true;
+            _hashCts?.Dispose();
+            _hashCts = null;
         }
     }
+
+    /// <summary>Cancellation source for the running hash, or null when idle.</summary>
+    private CancellationTokenSource? _hashCts;
+
+    /// <summary>
+    /// Cancels the in-progress hash computation. Safe when nothing is running.
+    /// Called from: the Hash tab Cancel button.
+    /// </summary>
+    private void CancelHash_Click(object sender, RoutedEventArgs e) => _hashCts?.Cancel();
 
     /// <summary>Clears the console box (and the separate window). Called from: XAML Click binding.</summary>
     private void ClearConsole_Click(object sender, RoutedEventArgs e) => ClearConsoleAll();
@@ -1029,7 +1566,14 @@ public partial class MainWindow : Window
     /// works without a restart.
     /// Called from: VirusTotal_Click (hash tab) and QuarantineVirusTotal_Click.
     /// </summary>
-    private async Task RunVirusTotalLookup(string fileToHash, string displayName)
+    /// <summary>
+    /// Looks up a file's SHA256 on VirusTotal (hash only, the file is never
+    /// uploaded) and records the verdict. When precomputedSha256 is given it is used
+    /// as-is instead of hashing fileToHash - the quarantine path passes the ORIGINAL
+    /// hash (de-obfuscated in memory) because the stored .quar bytes are XOR-masked.
+    /// Called from: Hash tab, Scan tab and QuarantineVirusTotal_Click.
+    /// </summary>
+    private async Task RunVirusTotalLookup(string fileToHash, string displayName, string? precomputedSha256 = null)
     {
         if (!System.IO.File.Exists(fileToHash))
         {
@@ -1050,12 +1594,16 @@ public partial class MainWindow : Window
         }
 
         AppendSection($"VIRUSTOTAL  {displayName}");
-        AppendLine("Computing SHA256 locally...");
-        var sha256 = await HashTool.ComputeAsync(fileToHash, "SHA256");
+        string? sha256 = precomputedSha256;
         if (sha256 == null)
         {
-            AppendLine("SHA256 computation failed (file locked or unreadable).");
-            return;
+            AppendLine("Computing SHA256 locally...");
+            sha256 = await HashTool.ComputeAsync(fileToHash, "SHA256");
+            if (sha256 == null)
+            {
+                AppendLine("SHA256 computation failed (file locked or unreadable).");
+                return;
+            }
         }
         AppendLine($"SHA256: {sha256}");
         AppendLine("Querying VirusTotal (hash only, the file is not uploaded)...");
@@ -1242,14 +1790,13 @@ public partial class MainWindow : Window
         bool newHidden = index == 4 || index == 3;
         bool newHistory = index == 3;
         bool layoutChanged = newHidden != _consoleHiddenForTab || newHistory != _onHistoryTab;
-        _onSettingsTab = index == 4;
         _onHistoryTab = newHistory;
         _consoleHiddenForTab = newHidden;
         if (layoutChanged) ApplyConsoleLayout();
 
-        // On the Settings tab, show a small "(running...)" note by the clamd header.
-        if (_onSettingsTab)
-            _ = UpdateClamdRunningLabelAsync();
+        // Clear any Settings status message on a tab change so a stale note (e.g.
+        // "Diagnostics finished...") does not linger after switching away and back.
+        SetSettingsStatus("", null);
     }
 
     // --- Output console placement (bottom / right / separate window) ---
@@ -1264,7 +1811,6 @@ public partial class MainWindow : Window
     /// scan controls including the progress indicator that appears mid-scan.
     /// </summary>
     private const double MainCardHeight = 270;
-    private bool _onSettingsTab;
     private bool _onHistoryTab;
     private bool _consoleHiddenForTab;
     private ConsoleWindow? _consoleWindow;
@@ -1528,16 +2074,6 @@ public partial class MainWindow : Window
         SetConsoleMode(saved);
     }
 
-    /// <summary>
-    /// Sets the "(running...)" note next to the clamd.conf header in Settings
-    /// based on the live daemon status. Called from: Tabs_SelectionChanged.
-    /// </summary>
-    private async Task UpdateClamdRunningLabelAsync()
-    {
-        bool running = await DaemonController.IsRunningAsync(1000);
-        ClamdRunningRun.Text = running ? "   (running...)" : "";
-    }
-
     private DateTime _lastDetectionSound = DateTime.MinValue;
     private byte[]? _detectionWav;
 
@@ -1659,9 +2195,9 @@ public partial class MainWindow : Window
     private async Task ShowUpdateCheckAsync()
     {
         var asm = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        string appVersion = asm != null ? $"{asm.Major}.{asm.Minor}.{asm.Build}" : "1.0.1";
+        string appVersion = asm != null ? $"{asm.Major}.{asm.Minor}.{asm.Build}" : "1.0.2";
 
-        var dialog = new UpdateCheckWindow(appVersion, _versionInfo?.Engine) { Owner = this };
+        var dialog = new UpdateCheckWindow(appVersion, _versionInfo?.Engine, AppendLine) { Owner = this };
         dialog.ShowDialog();
 
         if (dialog.ClamAvWasInstalled)
@@ -1672,6 +2208,17 @@ public partial class MainWindow : Window
             var info = await UpdateManager.GetVersionInfoAsync();
             if (info != null) _versionInfo = info;
             await ValidateConfigAndReportAsync();
+
+            // The install stopped the daemon to unlock clamd.exe. Bring it back if it
+            // was running before (or auto-start is on) and a signature database exists
+            // to load - clamd cannot start without one (e.g. right after a first-time
+            // install, before the initial signature update).
+            bool shouldRun = dialog.DaemonWasRunningBeforeInstall || SettingsManager.Current.AutoStartDaemon;
+            if (shouldRun && UpdateManager.DatabasesPresent() && !await DaemonController.IsRunningAsync())
+            {
+                AppendLine("Restarting the daemon after the ClamAV update...");
+                await DaemonController.StartAsync(AppendLine);
+            }
             await RefreshDaemonStatusAsync();
         }
     }
@@ -1680,26 +2227,33 @@ public partial class MainWindow : Window
     /// Shown at startup when the ClamAV binaries are missing: asks whether to set
     /// up ClamAV automatically or manually. "Download automatically" opens the
     /// update dialog (which shows the version and release date before downloading);
-    /// "Set up manually" prints the copy instructions and opens the ClamAV folder.
-    /// Neither option cancels anything. Called from: InitializeAsync when version
-    /// info is unavailable.
+    /// "Select existing folder" lets the user point at an existing ClamAV folder;
+    /// "Cancel" aborts setup and the app continues without ClamAV (set it up later
+    /// via Check for updates). Called from: InitializeAsync when version info is
+    /// unavailable.
     /// </summary>
     private async Task OfferClamAvSetupAsync()
     {
         AppendSection("CLAMAV SETUP");
         AppendLine("ClamAV was not found.");
 
-        bool auto = new MessageDialog(
+        var dialog = new MessageDialog(
             "ClamAV not found",
             "ClamHub could not find ClamAV. Download and set it up automatically, " +
             "or select an existing ClamAV folder on this PC yourself.",
             "Download automatically",
-            "Select existing folder") { Owner = this }.ShowDialog() == true;
+            "Select existing folder",
+            "Cancel") { Owner = this };
+        dialog.ShowDialog();
 
-        if (auto)
+        // Use the explicit ClickedButton so "Cancel" (extra) never falls into the
+        // "Select existing folder" branch and opens the folder picker.
+        if (dialog.ClickedButton == "confirm")
             await ShowUpdateCheckAsync();
-        else
+        else if (dialog.ClickedButton == "cancel")
             await LocateClamAvFolderAsync();
+        else
+            AppendLine("Setup cancelled. You can set up ClamAV later via Check for updates.");
     }
 
     /// <summary>
@@ -1773,23 +2327,42 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Maintenance "Run diagnostics" button: runs clamconf and dumps its engine,
-    /// build, database and config report into the console for troubleshooting.
+    /// build, database and config report into the console, and records the full
+    /// report as a History entry so it can be reviewed later.
     /// Called from: Maintenance XAML Click binding.
     /// </summary>
     private async void RunDiagnostics_Click(object sender, RoutedEventArgs e)
         => await RunGuarded(async () =>
         {
             AppendSection("DIAGNOSTICS (clamconf)");
+
+            // Capture every line for the History entry while still streaming to the
+            // console. The clamconf callback can fire from more than one thread, so
+            // guard the builder (AppendLine is already thread-safe).
+            var report = new System.Text.StringBuilder();
+            var reportLock = new object();
+            void Capture(string line)
+            {
+                AppendLine(line);
+                lock (reportLock) report.AppendLine(line);
+            }
+
             if (!ClamConf.Available)
             {
-                AppendLine("clamconf.exe was not found in the ClamAV folder.");
+                Capture("clamconf.exe was not found in the ClamAV folder.");
+                AddHistory("Diagnostics", "clamconf", "clamconf", "unavailable", report.ToString());
                 SetSettingsStatus("clamconf.exe not found; diagnostics unavailable.", "WarnBrush");
                 return;
             }
-            var result = await ClamConf.RunAsync(ClamConf.ConfigDirArg, AppendLine);
+
+            var result = await ClamConf.RunAsync(ClamConf.ConfigDirArg, Capture);
             if (result.Started)
-                AppendLine($"clamconf finished (exit code {result.ExitCode}).");
-            SetSettingsStatus("Diagnostics finished. The full output is in the console.", "OkBrush");
+                Capture($"clamconf finished (exit code {result.ExitCode}).");
+
+            AddHistory("Diagnostics", "clamconf", "clamconf",
+                result.Started ? "Diagnosis finished" : "failed to start",
+                report.ToString());
+            SetSettingsStatus("Diagnostics finished. Full report available in History.", "OkBrush");
         });
 
     /// <summary>
@@ -2005,7 +2578,10 @@ public partial class MainWindow : Window
         _columnWidthWatchers.Clear();
         CloseConsoleWindow();
         SaveWindowSize();
-        DaemonController.KillAllOwned();
+        // Leave clamd running when the app is restarting to finish an update, so the
+        // fresh instance finds it up; otherwise stop all bundled ClamAV processes.
+        if (!SelfUpdater.RestartingForUpdate)
+            DaemonController.KillAllOwned();
     }
 
     /// <summary>

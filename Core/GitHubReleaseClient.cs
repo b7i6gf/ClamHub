@@ -11,8 +11,9 @@ namespace ClamHub.Core;
 /// </summary>
 public static class GitHubReleaseClient
 {
-    /// <summary>A downloadable file attached to a release.</summary>
-    public record ReleaseAsset(string Name, string DownloadUrl, long Size);
+    /// <summary>A downloadable file attached to a release. Digest is GitHub's
+    /// asset checksum in "sha256:hex" form, or "" when the API did not supply one.</summary>
+    public record ReleaseAsset(string Name, string DownloadUrl, long Size, string Digest = "");
 
     /// <summary>Latest release: tag/name, publish date, web page and downloadable assets.</summary>
     public record ReleaseInfo(string Tag, string Name, DateTimeOffset? PublishedAt,
@@ -68,8 +69,9 @@ public static class GitHubReleaseClient
                     string an = GetString(a, "name");
                     string du = GetString(a, "browser_download_url");
                     long size = a.TryGetProperty("size", out var s) && s.TryGetInt64(out var sv) ? sv : 0;
+                    string digest = GetString(a, "digest"); // e.g. "sha256:ab12..."; "" when absent
                     if (an.Length > 0 && du.Length > 0)
-                        assets.Add(new ReleaseAsset(an, du, size));
+                        assets.Add(new ReleaseAsset(an, du, size, digest));
                 }
             }
 

@@ -21,6 +21,40 @@ public static class SingleInstance
     /// <summary>Message sent when a launch has no scan path (just focus the app).</summary>
     public const string ActivateMessage = "__ACTIVATE__";
 
+    // Separates the action id from the path inside a single forwarded message line.
+    private const char RequestSeparator = '\t';
+
+    /// <summary>
+    /// Encodes a context action id, a path and an optional infected-file action
+    /// into a single pipe message line. Called from: App.OnStartup when forwarding
+    /// a request to the primary instance.
+    /// </summary>
+    public static string FormatRequest(string actionId, string path, string? infected)
+        => $"{actionId}{RequestSeparator}{path}{RequestSeparator}{infected ?? ""}";
+
+    /// <summary>
+    /// Decodes a pipe message into an action id, a path and an optional infected
+    /// action. Returns false for the activate message or an empty line. A line with
+    /// no separator is treated as a bare scan path (backward compatibility).
+    /// Called from: MainWindow's pipe server callback.
+    /// </summary>
+    public static bool TryParseRequest(string message, out string actionId, out string path, out string? infected)
+    {
+        actionId = "scan";
+        path = "";
+        infected = null;
+        if (string.IsNullOrWhiteSpace(message) || message == ActivateMessage)
+            return false;
+
+        var parts = message.Split(RequestSeparator);
+        if (parts.Length < 2) { path = message; return true; } // legacy bare path = scan
+
+        actionId = parts[0];
+        path = parts[1];
+        if (parts.Length >= 3 && !string.IsNullOrWhiteSpace(parts[2])) infected = parts[2];
+        return !string.IsNullOrWhiteSpace(path);
+    }
+
     private static Mutex? _mutex;
 
     /// <summary>

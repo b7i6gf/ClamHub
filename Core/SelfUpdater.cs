@@ -24,13 +24,25 @@ public static class SelfUpdater
     private static string StagingExe => Path.Combine(Dir, BaseName + ".update.exe");
 
     /// <summary>
+    /// Set right before the app restarts itself to finish an update. The exit cleanup
+    /// (App.OnExit / MainWindow.Window_Closing) checks it and then SKIPS killing the
+    /// bundled clamd, so a running daemon survives the restart and the new instance
+    /// finds it already up (no gap, no race with its own auto-start). Only lives in
+    /// the OLD process; the fresh instance starts with it false.
+    /// Set by: UpdateCheckWindow.UpgradeClamHubAsync. Read by: App.OnExit and
+    /// MainWindow.Window_Closing.
+    /// </summary>
+    public static bool RestartingForUpdate { get; set; }
+
+    /// <summary>
     /// Downloads the new ClamHub build next to the current exe (extracting the .exe
     /// from a zip when isZip). Reports byte progress via onProgress and status text
     /// via onOutput. Returns the staged exe path, or null on error/cancel (message
     /// via onOutput). Called from: UpdateCheckWindow.UpgradeClamHubAsync.
     /// </summary>
     public static async Task<string?> PrepareUpdateAsync(string url, bool isZip, long knownSize,
-        Action<string> onOutput, Action<long, long?> onProgress, CancellationToken cancel = default)
+        string? expectedDigest, Action<string> onOutput, Action<long, long?> onProgress,
+        CancellationToken cancel = default)
     {
         if (string.IsNullOrEmpty(CurrentExe))
         {
@@ -43,7 +55,19 @@ public static class SelfUpdater
             try { if (File.Exists(StagingExe)) File.Delete(StagingExe); } catch { /* replaced below */ }
 
             onOutput("Downloading ClamHub...");
-            await DownloadAsync(url, isZip ? tempZip : StagingExe, knownSize, onProgress, cancel);
+            string downloaded = isZip ? tempZip : StagingExe;
+            await DownloadAsync(url, downloaded, knownSize, onProgress, cancel);
+
+            // Verify the download against GitHub's published SHA256 before using it,
+            // so a corrupted or tampered file is never extracted or run. For a zip
+            // the digest covers the zip (what was downloaded); the exe is extracted
+            // only after the zip passes.
+            onProgress(-1, null); // indeterminate bar during hashing
+            if (!await HashTool.VerifyFileDigestAsync(downloaded, expectedDigest, onOutput, cancel))
+            {
+                try { if (File.Exists(StagingExe)) File.Delete(StagingExe); } catch { /* cleanup */ }
+                return null;
+            }
 
             if (isZip)
             {

@@ -74,9 +74,9 @@ public partial class ScanQueueWindow : Window
     /// <summary>Adds a folder via the system picker. Called from: Add folder button.</summary>
     private void AddFolder_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFolderDialog { Title = "Select a folder to add" };
+        var dialog = new OpenFolderDialog { Title = "Select folder(s) to add", Multiselect = true };
         if (dialog.ShowDialog(this) != true) return;
-        AddTarget(dialog.FolderName);
+        foreach (var d in dialog.FolderNames) AddTarget(d);
     }
 
     /// <summary>Removes the selected entries. Called from: Remove selected button.</summary>

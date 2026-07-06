@@ -16,8 +16,34 @@ public static class QuarantineManager
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
+    /// <summary>
+    /// Byte the stored .quar files are XORed with, so a scanner on the same machine
+    /// does not match a signature against the quarantined copy. This is signature
+    /// neutralization, NOT encryption; the file is trivially recoverable by design.
+    /// </summary>
+    private const byte ObfuscationKey = 0xFF;
+
     /// <summary>In-memory index, newest first.</summary>
     public static List<QuarantineEntry> Entries { get; private set; } = new();
+
+    /// <summary>
+    /// Streams source to destination flipping every byte with ObfuscationKey. XOR is
+    /// symmetric, so the same call obfuscates when quarantining and restores when
+    /// releasing. destMode is CreateNew (never clobber) or Create (overwrite allowed).
+    /// Called from: Quarantine and Restore.
+    /// </summary>
+    private static void CopyXor(string source, string destination, FileMode destMode)
+    {
+        using var src = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var dst = new FileStream(destination, destMode, FileAccess.Write, FileShare.None);
+        var buffer = new byte[1 << 16];
+        int read;
+        while ((read = src.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            for (int i = 0; i < read; i++) buffer[i] ^= ObfuscationKey;
+            dst.Write(buffer, 0, read);
+        }
+    }
 
     /// <summary>
     /// Loads quarantine.json, an invalid or missing file yields an empty list.
@@ -59,7 +85,19 @@ public static class QuarantineManager
             var dest = Path.Combine(AppPaths.QuarantineDir, id);
             long size = new FileInfo(originalPath).Length;
 
-            File.Move(originalPath, dest);
+            // Write the stored copy XORed so a usable malware file is never on disk
+            // (co-resident AV would otherwise grab it), then remove the original. On
+            // any failure delete the half-written copy and keep the original intact.
+            try
+            {
+                CopyXor(originalPath, dest, FileMode.CreateNew);
+                File.Delete(originalPath);
+            }
+            catch
+            {
+                try { if (File.Exists(dest)) File.Delete(dest); } catch { /* best effort */ }
+                throw;
+            }
 
             Entries.Insert(0, new QuarantineEntry
             {
@@ -67,7 +105,8 @@ public static class QuarantineManager
                 OriginalPath = originalPath,
                 Threat = threat,
                 QuarantinedAt = DateTime.Now,
-                SizeBytes = size
+                SizeBytes = size,
+                Obfuscated = true
             });
             Save();
             return true;
@@ -104,7 +143,20 @@ public static class QuarantineManager
             var dir = Path.GetDirectoryName(entry.OriginalPath);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-            File.Move(stored, entry.OriginalPath, overwrite);
+            if (entry.Obfuscated)
+            {
+                // Reverse the XOR back to the original bytes, then drop the stored
+                // copy. CreateNew unless overwrite, as a guard against a file that
+                // appeared at the target after the check above.
+                CopyXor(stored, entry.OriginalPath, overwrite ? FileMode.Create : FileMode.CreateNew);
+                File.Delete(stored);
+            }
+            else
+            {
+                // Legacy entry stored plaintext (before obfuscation): move as-is.
+                File.Move(stored, entry.OriginalPath, overwrite);
+            }
+
             Entries.RemoveAll(e => e.Id == entry.Id);
             Save();
             return true;
@@ -120,6 +172,41 @@ public static class QuarantineManager
     /// Permanently deletes a quarantined file and its index entry.
     /// Called from: MainWindow.Quarantine.cs Delete button.
     /// </summary>
+    /// <summary>
+    /// Computes the SHA256 of a quarantined entry's ORIGINAL content. It streams the
+    /// stored .quar file and, for an obfuscated entry, reverses the XOR IN MEMORY
+    /// (block by block, straight into the hasher) before hashing, so the result
+    /// matches the original file WITHOUT ever writing a usable/de-obfuscated copy to
+    /// disk. Returns the uppercase hex hash, or null with an error.
+    /// Called from: MainWindow.QuarantineVirusTotal_Click.
+    /// </summary>
+    public static string? ComputeOriginalSha256(QuarantineEntry entry, out string? error)
+    {
+        error = null;
+        try
+        {
+            var stored = Path.Combine(AppPaths.QuarantineDir, entry.Id);
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            using var src = new FileStream(stored, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var buffer = new byte[1 << 16];
+            int read;
+            while ((read = src.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                // Reverse the XOR only in this transient buffer, never on disk.
+                if (entry.Obfuscated)
+                    for (int i = 0; i < read; i++) buffer[i] ^= ObfuscationKey;
+                sha.TransformBlock(buffer, 0, read, null, 0);
+            }
+            sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+            return Convert.ToHexString(sha.Hash!);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return null;
+        }
+    }
+
     public static bool Delete(QuarantineEntry entry, out string? error)
     {
         error = null;

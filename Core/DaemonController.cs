@@ -18,6 +18,9 @@ public static class DaemonController
     /// <summary>Process handle when this GUI instance started clamd itself.</summary>
     private static Process? _ownedProcess;
 
+    /// <summary>Serializes concurrent StartAsync calls so clamd is never launched twice.</summary>
+    private static readonly SemaphoreSlim _startLock = new(1, 1);
+
     /// <summary>
     /// Checks whether clamd is responding. Sends "zPING\0" and expects "PONG".
     /// More reliable than a plain port check because it proves the daemon has
@@ -53,12 +56,18 @@ public static class DaemonController
     /// </summary>
     public static async Task<bool> StartAsync(Action<string>? onStatus = null, int timeoutSeconds = 60)
     {
+        // Serialize with other start attempts (startup auto-start + a prefer-daemon
+        // scan ensuring the daemon) so clamd is not launched twice at once.
+        await _startLock.WaitAsync();
+        try
+        {
         if (await IsRunningAsync())
         {
             onStatus?.Invoke("clamd is already running.");
             return true;
         }
 
+        onStatus?.Invoke("");
         onStatus?.Invoke("Starting clamd...");
         _ownedProcess = ProcessRunner.StartDetached(
             AppPaths.ClamdExe,
@@ -95,6 +104,8 @@ public static class DaemonController
         onStatus?.Invoke("Hint: if the database or log folder in clamd.conf is wrong (e.g. after moving " +
                          "the app), use Settings > Rebuild config.");
         return false;
+        }
+        finally { _startLock.Release(); }
     }
 
     /// <summary>
@@ -180,8 +191,15 @@ public static class DaemonController
             // Connection refused means it is already going down, ignore.
         }
 
-        // Give it a moment, then force kill if we own the process and it hangs.
-        await Task.Delay(2000);
+        // Poll until clamd is actually gone (PING fails) instead of always waiting a
+        // fixed 2s, so the Stop button feels responsive when it exits quickly. Cap at
+        // ~2s, then force-kill if we own a process that is still hanging.
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (!await IsRunningAsync(300)) break;
+            await Task.Delay(150);
+        }
         if (_ownedProcess is { HasExited: false })
         {
             try { _ownedProcess.Kill(entireProcessTree: true); } catch { /* already gone */ }
