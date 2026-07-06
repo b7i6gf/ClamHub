@@ -19,7 +19,7 @@ ClamHub puts a clean, dark UI on top of ClamAV so you do not have to deal with t
 ## Highlights
 
 - **Portable** - the entire setup lives in one folder, move it wherever you want
-- **Extensive** - Feature-rich application, with full control over scans, infected files and configs
+- **Extensive** - Feature-rich application, with full control over scans, infected files and configs. Efficient scanning with Windows context menu actions.
 - **Modern dark UI** - consistent design, clean layout, pleasant for the eye
 - **Smart console layout** - dock the output below, to the right, or pop it into a separate window. On the Settings tab the console hides automatically so the config editors get the full space
 - **No surprises** - configs are generated once on startup and are highly customizable within the settings tab
@@ -92,7 +92,7 @@ From Settings you can configure the default behaviour of the app, as well as the
 
 You can also:
 - Add or remove path and extension exclusions under Daemon > File system > Exclude Path
-- Enable the Windows Explorer context menu entry ("Scan with ClamHub") for all files
+- Enable the Windows Explorer context menu entries you need for your convenience
 - Enter your VirusTotal API key to enable the VirusTotal feature in Scan, Hash Verifier and Quarantine
 - Run diagnostics with ClamAVs built-in clamconf.exe.
 - Always start in administrator mode.
