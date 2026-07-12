@@ -79,6 +79,7 @@ Shows every file ClamHub has quarantined, with the original path, date and file 
 - Search for signatures within all or selected databases; you can also compare the signature of quarantined files with the databases
 - Select and disable databases to exclude those signatures for scans. Simply right-click on an entry and select "Disable database". When databases get disabled, they will be moved in a separate folder to ensure freshclam will not delete it. Therefore all disabled databases will not be updated as well!
 - Quickly remove databases by right-clicking an entry and select "Remove database"
+- Added the ability to search for specific signatures or duplicates in different databases as well as comparing found signatures from quarantined files with available databases.
 
 
 ---
