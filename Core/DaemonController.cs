@@ -67,6 +67,28 @@ public static class DaemonController
             return true;
         }
 
+        // Heal configs written by older versions: ExcludeDatabase is not a valid
+        // clamd.conf option and made clamd exit with a parse error (code 1).
+        try { ConfigManager.RemoveManagedDatabaseExclusionBlocks(); }
+        catch { /* fall through; clamd may still start */ }
+
+        // Re-apply user disables (freshclam may have re-downloaded a disabled official
+        // database under its plain name) and auto-disable empty databases (a 0-signature
+        // file makes clamd fail with "Malformed database"). Both work by renaming the
+        // file to "name.disabled", which libclamav ignores.
+        try
+        {
+            foreach (var name in ConfigManager.MigrateDisabledDatabases())
+                onStatus?.Invoke($"Disabled database moved out of freshclam's folder (rescued): {name}");
+            foreach (var name in ConfigManager.PruneStaleExclusions())
+                onStatus?.Invoke($"Disable entry removed (database no longer exists): {name}");
+            foreach (var name in ConfigManager.EnforceDatabaseDisables())
+                onStatus?.Invoke($"Disabled database re-applied: {name}");
+            foreach (var name in ConfigManager.AutoDisableEmptyDatabases())
+                onStatus?.Invoke($"Database disabled because it holds no signatures: {name}");
+        }
+        catch { /* fall through; clamd may still start */ }
+
         onStatus?.Invoke("");
         onStatus?.Invoke("Starting clamd...");
         _ownedProcess = ProcessRunner.StartDetached(
@@ -162,6 +184,39 @@ public static class DaemonController
 
         onStatus?.Invoke("Daemon is taking longer than expected to reload; check its status.");
         return false;
+    }
+
+    /// <summary>
+    /// Reliable reload after a database change: fully stops clamd and starts it again,
+    /// so the new database is guaranteed to be live. Used instead of the async RELOAD
+    /// command because clamd keeps answering PING while RELOAD swaps databases in the
+    /// background, so a scan right after RELOAD can still use the OLD database (seen as
+    /// stale detections of files already removed from a list). A fresh start only opens
+    /// its socket after the database is fully loaded, so once StartAsync reports ready
+    /// the new DB is active. Does nothing (returns true) when clamd is not running,
+    /// since standalone scans read the database fresh on every run anyway. Returns false
+    /// only when the restart failed to bring clamd back up. Reports progress via
+    /// onStatus. Called from: MainWindow after a custom-signature change and the manual
+    /// reload button in the daemon settings.
+    /// </summary>
+    public static async Task<bool> RestartAsync(Action<string>? onStatus = null,
+        int startTimeoutSeconds = 60)
+    {
+        if (!await IsRunningAsync(1000))
+        {
+            onStatus?.Invoke("clamd is not running; nothing to reload.");
+            return true;
+        }
+
+        await StopAsync(onStatus);
+
+        // Ensure no clamd from our own folder is still holding the port before starting
+        // a fresh one; otherwise StartAsync sees it running and skips the start, leaving
+        // the OLD database loaded.
+        if (await IsRunningAsync(500))
+            KillAllOwned();
+
+        return await StartAsync(onStatus, startTimeoutSeconds);
     }
 
     /// <summary>

@@ -8,7 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>ClamHub</AssemblyName>
     <RootNamespace>ClamHub</RootNamespace>
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
     <!-- Embeds ClamHub.ico as the EXE icon (taskbar, Explorer, window). -->
     <ApplicationIcon>ClamHub.ico</ApplicationIcon>
     <!-- Publish flags (single file, self contained) are passed via publish.cmd

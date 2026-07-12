@@ -1,0 +1,112 @@
+<Window x:Class="ClamHub.CustomDatabaseUrlWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="Custom database URLs" Height="560" Width="860"
+        MinHeight="420" MinWidth="640"
+        WindowStartupLocation="CenterOwner" WindowStyle="None" ResizeMode="CanResize"
+        Background="{StaticResource BgBrush}">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="6"
+                            CornerRadius="0" GlassFrameThickness="0"
+                            UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+
+    <Border BorderBrush="{StaticResource WindowBorderBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="36"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Title bar -->
+            <Grid Grid.Row="0" Background="{StaticResource TitleBarBrush}">
+                <TextBlock Text="Custom database URLs" FontWeight="SemiBold"
+                           VerticalAlignment="Center" Margin="14,0,0,0"/>
+                <Button HorizontalAlignment="Right" Style="{StaticResource CloseCaptionButton}"
+                        Click="Close_Click" ToolTip="Close"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Path Data="M0,0 L10,10 M0,10 L10,0" Stroke="{StaticResource TextBrush}"
+                          StrokeThickness="1"/>
+                </Button>
+            </Grid>
+
+            <!-- Content -->
+            <Grid Grid.Row="1" Margin="20,16,20,8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="2*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="1*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" TextWrapping="Wrap"
+                           Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,12"
+                           Text="freshclam downloads these extra ClamAV databases on each update, in addition to the official ones. One URL per entry; each must point directly to a ClamAV database file (http, https or file)."/>
+
+                <!-- Add row -->
+                <Grid Grid.Row="1" Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0" x:Name="UrlInput" Height="30" VerticalContentAlignment="Center"
+                             Margin="0,0,8,0" KeyDown="UrlInput_KeyDown"/>
+                    <Button Grid.Column="1" Content="Add" Width="80" Height="30" Click="Add_Click"/>
+                </Grid>
+
+                <!-- URL list -->
+                <Border Grid.Row="2" Background="{StaticResource PanelBrush}" CornerRadius="6" Padding="2">
+                    <ListBox x:Name="UrlList" Background="Transparent" BorderThickness="0"
+                             Foreground="{StaticResource TextBrush}" SelectionMode="Extended"
+                             ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="HorizontalAlignment" Value="Left"/>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                    </ListBox>
+                </Border>
+
+                <WrapPanel Grid.Row="3" Margin="0,8,0,0">
+                    <Button Content="Remove selected" Height="28" Margin="0,0,8,0" Click="RemoveSelected_Click"/>
+                    <Button Content="Save" Height="28" Width="90" Margin="0,0,8,0"
+                            FontWeight="SemiBold" Click="Save_Click"
+                            ToolTip="Write the URL list to freshclam.conf"/>
+                    <Button x:Name="UpdateNowButton" Content="Update now" Height="28" Width="110"
+                            Click="UpdateNow_Click"
+                            ToolTip="Save, then run freshclam to fetch the databases and reload the daemon"/>
+                </WrapPanel>
+
+                <TextBlock Grid.Row="4" Text="Update output" FontWeight="SemiBold" Margin="0,12,0,6"/>
+
+                <!-- Update-now log -->
+                <Border Grid.Row="5" Background="#FF17181C" CornerRadius="6" Padding="2">
+                    <TextBox x:Name="UpdateLog" IsReadOnly="True" Background="Transparent"
+                             BorderThickness="0" Foreground="#FFD6D6D6" FontFamily="Consolas" FontSize="12"
+                             Padding="6" TextWrapping="NoWrap"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+                </Border>
+            </Grid>
+
+            <!-- Footer -->
+            <Grid Grid.Row="2" Margin="20,4,20,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                    <TextBlock x:Name="StatusText" TextWrapping="Wrap"
+                               Foreground="{StaticResource MutedTextBrush}"/>
+                    <ProgressBar x:Name="WorkBar" Height="6" Margin="0,6,0,0"
+                                 IsIndeterminate="True" Visibility="Collapsed"/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="Close" Width="110" Height="32"
+                        FontWeight="SemiBold" Click="Close_Click"/>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

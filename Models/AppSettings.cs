@@ -134,6 +134,32 @@ public class AppSettings
     public List<string> ExcludeFiles { get; set; } = new();
 
     /// <summary>
+    /// File names (e.g. "daily.cvd", "rfxn.ndb") of signature databases the user disabled
+    /// via the Signatures table context menu. Disabling MOVES the file from the database
+    /// folder to AppPaths.DisabledDatabaseDir: clamd and clamscan only load the database
+    /// folder, so the database is not scanned, and freshclam neither sees nor deletes it
+    /// there (a disabled file kept inside the database folder was pruned by freshclam,
+    /// which is how databases went missing). Updates are additionally suppressed via the
+    /// freshclam ExcludeDatabase block (official/mirror databases) or by parking the
+    /// DatabaseCustomURL line (see DisabledCustomUrls). This list is the durable record:
+    /// ConfigManager.EnforceDatabaseDisables re-applies the move if a file re-appears, and
+    /// PruneStaleExclusions drops entries whose database no longer exists at all. The
+    /// custom blacklist/whitelist are never listed here. Case-insensitive.
+    /// </summary>
+    public List<string> ExcludedDatabases { get; set; } = new();
+
+    /// <summary>
+    /// Custom-URL databases (freshclam DatabaseCustomURL) that are currently disabled,
+    /// keyed by their local file name (e.g. "rfxn.ndb" -> the download URL). freshclam's
+    /// ExcludeDatabase does NOT suppress DatabaseCustomURL downloads, so while such a
+    /// database is disabled its URL is "parked" here and REMOVED from freshclam.conf so
+    /// freshclam has nothing to download; enabling restores the line. Kept in sync with
+    /// ExcludedDatabases by ConfigManager.SyncCustomUrlDownloads. Case-insensitive keys.
+    /// </summary>
+    public Dictionary<string, string> DisabledCustomUrls { get; set; }
+        = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Layout of multiple context menu entries: a cascading "ClamHub" submenu
     /// (default) or an inline list. Ignored when only one entry applies. Applied by
     /// Core.ContextMenuManager.Register.

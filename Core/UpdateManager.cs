@@ -14,18 +14,29 @@ public static class UpdateManager
     public static bool UpdateInProgress { get; private set; }
 
     /// <summary>
-    /// True if at least one signature database (*.cvd/*.cld) is already present.
-    /// Used to tell an initial database creation (first download) from a routine
-    /// signature update. Called from: MainWindow before running an update.
+    /// True if at least one signature database container is present, INCLUDING disabled
+    /// ones (which live in AppPaths.DisabledDatabaseDir): a deliberately disabled database
+    /// still exists, so the app must not fall into the initial-download mode (which showed
+    /// the first-download window on every start once all containers were disabled). Used to
+    /// tell an initial database creation (first download) from a routine signature update.
+    /// Called from: MainWindow before running an update and the daemon autostart.
     /// </summary>
     public static bool DatabasesPresent()
     {
+        return HasContainer(AppPaths.DatabaseDir) || HasContainer(AppPaths.DisabledDatabaseDir);
+    }
+
+    /// <summary>True when the folder holds a *.cvd/*.cld container (or a legacy
+    /// "*.disabled" leftover of one). Called from: DatabasesPresent.</summary>
+    private static bool HasContainer(string dir)
+    {
         try
         {
-            var dir = AppPaths.DatabaseDir;
             if (!Directory.Exists(dir)) return false;
             return Directory.EnumerateFiles(dir, "*.cvd").Any()
-                || Directory.EnumerateFiles(dir, "*.cld").Any();
+                || Directory.EnumerateFiles(dir, "*.cld").Any()
+                || Directory.EnumerateFiles(dir, "*.cvd" + ConfigManager.DisabledSuffix).Any()
+                || Directory.EnumerateFiles(dir, "*.cld" + ConfigManager.DisabledSuffix).Any();
         }
         catch
         {
@@ -51,6 +62,24 @@ public static class UpdateManager
         try
         {
             onOutput("Starting signature update (freshclam)...");
+
+            // Self-heal first (a vanished database must not stay excluded forever), then
+            // skip downloading the databases the user disabled (managed ExcludeDatabase
+            // block in freshclam.conf), so a disabled database is not re-downloaded in
+            // full on every update.
+            try
+            {
+                foreach (var name in ConfigManager.MigrateDisabledDatabases())
+                    onOutput($"Disabled database moved out of freshclam's folder (rescued): {name}");
+                foreach (var name in ConfigManager.PruneStaleExclusions())
+                    onOutput($"Disable entry removed (database no longer exists): {name}");
+                ConfigManager.WriteUpdateExclusions();
+                ConfigManager.SyncCustomUrlDownloads(); // park disabled custom-URL databases
+                var skipped = ConfigManager.ExcludedDatabaseNames();
+                if (skipped.Count > 0)
+                    onOutput($"Skipping updates for disabled databases: {string.Join(", ", skipped)}");
+            }
+            catch { /* non-fatal: freshclam still runs, just without the skip */ }
             var result = await ProcessRunner.RunAsync(
                 AppPaths.FreshClamExe,
                 $"--config-file=\"{AppPaths.FreshClamConf}\"",

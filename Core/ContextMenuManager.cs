@@ -76,6 +76,10 @@ public static class ContextMenuManager
             "Look up the file's SHA256 on VirusTotal from ClamHub.",
             ContextScope.File, 40, RequiresVirusTotalKey: true),
 
+        new("signature", "Put on list",
+            "Blacklist or whitelist the file with ClamHub's own signatures (adds a Blacklist/Whitelist submenu).",
+            ContextScope.File, 45),
+
         new("exclude", "Exclude Path",
             "Add the file or folder to ClamHub's permanent exclusions.",
             ContextScope.File | ContextScope.Directory | ContextScope.Background, 50),
@@ -267,6 +271,23 @@ public static class ContextMenuManager
                     new() { Id = "report",     Order = 10, Label = "Report",     Command = ScanCommand("report", pathToken) },
                     new() { Id = "quarantine", Order = 20, Label = "Quarantine", Command = ScanCommand("quarantine", pathToken) },
                     new() { Id = "remove",     Order = 30, Label = "Remove",     Command = ScanCommand("remove", pathToken) },
+                }
+            };
+        }
+
+        if (action.Id == "signature")
+        {
+            // Always a Blacklist / Whitelist submenu (unlike scan, this is not gated
+            // by a setting). Each leaf launches "--action blacklist|whitelist --path".
+            return new MenuNode
+            {
+                Id = action.Id,
+                Order = action.Order,
+                Label = action.Label,
+                Children = new List<MenuNode>
+                {
+                    new() { Id = "blacklist", Order = 10, Label = "Blacklist file", Command = CommandFor("blacklist", pathToken) },
+                    new() { Id = "whitelist", Order = 20, Label = "Whitelist file", Command = CommandFor("whitelist", pathToken) },
                 }
             };
         }

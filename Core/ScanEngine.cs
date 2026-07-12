@@ -115,6 +115,13 @@ public static class ScanEngine
             string exe = useDaemon ? AppPaths.ClamdScanExe : AppPaths.ClamScanExe;
             string args = useDaemon ? BuildClamdScanArgs(options) : BuildClamScanArgs(options, applyExcludes);
 
+            // Make it visible that disabled databases are left out. Disabling MOVES the file
+            // to AppPaths.DisabledDatabaseDir, and clamd/clamscan only load DatabaseDir, so
+            // this holds for BOTH engines without any extra arguments.
+            var disabled = ConfigManager.ExcludedDatabaseNames();
+            if (disabled.Count > 0)
+                onOutput($"Databases disabled for scanning are not loaded: {string.Join(", ", disabled)}");
+
             onOutput($"Running: {Path.GetFileName(exe)} {args}");
             var infected = new List<string>();
 

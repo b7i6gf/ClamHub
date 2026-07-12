@@ -75,6 +75,29 @@ public class ClamConfFile
         => _lines.RemoveAll(line => TryParse(line, out var k, out _) && k == key);
 
     /// <summary>
+    /// Returns every value of a key in file order, for keys that may appear multiple
+    /// times (e.g. DatabaseCustomURL). Called from: the custom-database-URL window.
+    /// </summary>
+    public IEnumerable<string> GetValues(string key)
+    {
+        foreach (var line in _lines)
+            if (TryParse(line, out var k, out var v) && k == key)
+                yield return v;
+    }
+
+    /// <summary>
+    /// Appends a new "Key Value" line without touching existing occurrences, for keys
+    /// that may appear multiple times. Values with spaces are quoted. Called from: the
+    /// custom-database-URL window when writing the URL list.
+    /// </summary>
+    public void AddValue(string key, string value)
+    {
+        _lines.Add(value.Contains(' ') && !value.StartsWith('"')
+            ? $"{key} \"{value}\""
+            : $"{key} {value}");
+    }
+
+    /// <summary>
     /// Writes the (modified) lines back to disk.
     /// Called from: settings tab save handlers.
     /// </summary>

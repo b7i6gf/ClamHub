@@ -48,6 +48,7 @@ public partial class MainWindow : Window
         // Stop table columns from being dragged down to zero width and vanishing.
         ClampColumnWidths(HistoryGridView, MinColumnWidth);
         ClampColumnWidths(QuarantineGridView, MinColumnWidth);
+        ClampColumnWidths(SignaturesGridView, MinColumnWidth);
         RestoreWindowSize();
         Loaded += async (_, _) => await InitializeAsync();
     }
@@ -169,7 +170,7 @@ public partial class MainWindow : Window
         {
             AdminRestartButton.IsEnabled = false;
             AdminRestartButton.Content = "Admin mode";
-            Title = "ClamHub 1.0.2 (Administrator)";
+            Title = "ClamHub 1.0.3 (Administrator)";
         }
 
         var info = await UpdateManager.GetVersionInfoAsync();
@@ -307,6 +308,8 @@ public partial class MainWindow : Window
                 case "queue": StartContextMenuAddToQueue(path); break;
                 case "hash": await StartContextMenuHash(path); break;
                 case "vt": await StartContextMenuVirusTotal(path); break;
+                case "blacklist": await StartContextMenuSignature(path, CustomSignatureManager.ListKind.Blacklist); break;
+                case "whitelist": await StartContextMenuSignature(path, CustomSignatureManager.ListKind.Whitelist); break;
                 case "exclude": await AddPermanentExclusion(path); break;
                 default:
                     AppendSection("CONTEXT MENU");
@@ -490,13 +493,13 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Context menu "Compute Hash": switches to the Hash Verifier tab and computes
+    /// Context menu "Compute Hash": switches to the Hash-Verifier tab and computes
     /// all hashes of the file (only single files can be hashed).
     /// Called from: DispatchContextAction.
     /// </summary>
     private async Task StartContextMenuHash(string path)
     {
-        MainTabs.SelectedIndex = 1; // Hash Verifier tab
+        MainTabs.SelectedIndex = 1; // Hash-Verifier tab
         if (!System.IO.File.Exists(path))
         {
             AppendSection("HASH");
@@ -510,14 +513,14 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Context menu "VT Report": switches to the Hash Verifier tab and looks the
+    /// Context menu "VT Report": switches to the Hash-Verifier tab and looks the
     /// file up on VirusTotal (hash only). Requires an API key and a single file;
     /// RunVirusTotalLookup re-checks the key itself.
     /// Called from: DispatchContextAction.
     /// </summary>
     private async Task StartContextMenuVirusTotal(string path)
     {
-        MainTabs.SelectedIndex = 1; // Hash Verifier tab
+        MainTabs.SelectedIndex = 1; // Hash-Verifier tab
         if (!System.IO.File.Exists(path))
         {
             AppendSection("VIRUSTOTAL");
@@ -678,6 +681,7 @@ public partial class MainWindow : Window
         SetOutputViewSwitchingEnabled(false); // lock only the pop-out toggle mid-scan (bottom/right stay switchable)
         StartDaemonButton.IsEnabled = StopDaemonButton.IsEnabled = false;
         UpdateButton.IsEnabled = ScanButton.IsEnabled = MemoryScanButton.IsEnabled = false;
+        SignaturesUpdateButton.IsEnabled = false; // same freshclam run, second entry point
         ScanVirusTotalButton.IsEnabled = false;
         try
         {
@@ -694,6 +698,7 @@ public partial class MainWindow : Window
             _busy = false;
             SetOutputViewSwitchingEnabled(true);
             UpdateButton.IsEnabled = ScanButton.IsEnabled = MemoryScanButton.IsEnabled = true;
+            SignaturesUpdateButton.IsEnabled = true;
             RefreshVirusTotalButtons();
             await RefreshDaemonStatusAsync();
         }
@@ -743,7 +748,19 @@ public partial class MainWindow : Window
         }
         try
         {
-            return await UpdateManager.RunUpdateAsync(AppendLine);
+            bool ok = await UpdateManager.RunUpdateAsync(AppendLine);
+
+            // freshclam re-downloads a disabled official database under its plain name
+            // (the ".disabled" file is invisible to it); rename it away again so a
+            // disable survives signature updates.
+            try
+            {
+                foreach (var name in Core.ConfigManager.EnforceDatabaseDisables())
+                    AppendLine($"Disabled database re-applied after update: {name}");
+            }
+            catch { /* purely cosmetic enforcement; the daemon start repeats it */ }
+
+            return ok;
         }
         finally
         {
@@ -755,7 +772,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>Update signatures button. Called from: XAML Click binding.</summary>
+    /// <summary>Update signatures button (Settings tab and Signatures tab). Called from: XAML Click bindings.</summary>
     private async void Update_Click(object sender, RoutedEventArgs e)
         => await RunGuarded(async () =>
         {
@@ -772,6 +789,14 @@ public partial class MainWindow : Window
                 ok ? "Signature update finished. See the console for details."
                    : "Signature update failed. See the console.",
                 ok ? "OkBrush" : "DangerBrush");
+
+            // The database versions just changed; re-read them if the Signatures table
+            // was already built (otherwise it loads fresh the next time the tab opens).
+            if (_sigInfoLoaded)
+            {
+                _sigInfoLoaded = false;
+                await RefreshDatabaseInfoAsync();
+            }
         });
 
     /// <summary>
@@ -1769,8 +1794,9 @@ public partial class MainWindow : Window
         {
             1 => "I N T E G R I T Y",
             2 => "I S O L A T I O N",
-            3 => "A C T I V I T Y",
-            4 => "C O N F I G U R A T I O N",
+            3 => "S I G N A T U R E S",
+            4 => "A C T I V I T Y",
+            5 => "C O N F I G U R A T I O N",
             _ => "A N T I V I R U S"
         };
 
@@ -1781,16 +1807,19 @@ public partial class MainWindow : Window
         // last column to the now-visible viewport; a full rebind/Refresh here is wasted
         // work on every switch.
         if (index == 2) ScheduleFill(QuarantineList, QuarantineGridView);
-        else if (index == 3) ScheduleFill(HistoryList, HistoryGridView);
+        else if (index == 3) _ = OnSignaturesTabOpenedAsync();
+        else if (index == 4) ScheduleFill(HistoryList, HistoryGridView);
 
-        // Settings (4) and History (3) hide the main output console: Settings uses
-        // the full area, History shows its own output console (in the bottom row).
-        // Only redo the console layout when that placement actually changes (e.g. to or
-        // from Settings/History), not on every switch between console-visible tabs.
-        bool newHidden = index == 4 || index == 3;
-        bool newHistory = index == 3;
-        bool layoutChanged = newHidden != _consoleHiddenForTab || newHistory != _onHistoryTab;
+        // Settings (5) and History (4) hide the main output console: Settings uses the
+        // full area, History and Signatures (3) each show their OWN console in the
+        // bottom row. Only redo the console layout when that placement actually changes.
+        bool newHidden = index == 5 || index == 4;
+        bool newHistory = index == 4;
+        bool newSignatures = index == 3;
+        bool layoutChanged = newHidden != _consoleHiddenForTab
+            || newHistory != _onHistoryTab || newSignatures != _onSignaturesTab;
         _onHistoryTab = newHistory;
+        _onSignaturesTab = newSignatures;
         _consoleHiddenForTab = newHidden;
         if (layoutChanged) ApplyConsoleLayout();
 
@@ -1811,7 +1840,15 @@ public partial class MainWindow : Window
     /// scan controls including the progress indicator that appears mid-scan.
     /// </summary>
     private const double MainCardHeight = 270;
+
+    /// <summary>Extra height the History and Signatures tab cards get over MainCardHeight
+    /// when their own console is docked at the bottom (that console, a star row, grows by
+    /// the same amount), since both show a table that benefits from the space. Was 75,
+    /// then 67 (-8), now 55 (a further -12) per user request: the table card is a bit
+    /// smaller and the output panel a bit larger on those two tabs.</summary>
+    private const double OwnConsoleExtraCardHeight = 55;
     private bool _onHistoryTab;
+    private bool _onSignaturesTab;
     private bool _consoleHiddenForTab;
     private ConsoleWindow? _consoleWindow;
 
@@ -1935,17 +1972,25 @@ public partial class MainWindow : Window
     private void ApplyConsoleLayout()
     {
         bool history = _onHistoryTab;
+        bool signatures = _onSignaturesTab;
         HistoryConsoleBorder.Visibility = history ? Visibility.Visible : Visibility.Collapsed;
+        SignaturesConsoleBorder.Visibility = signatures ? Visibility.Visible : Visibility.Collapsed;
 
-        if (history)
+        if (history || signatures)
         {
-            // The History output follows the same docking as the normal console,
-            // except the separate-window mode is not used here: it falls back to a
-            // bottom dock. The normal console stays hidden on this tab.
+            // The History and Signatures tabs each dock their OWN console the same way
+            // as the normal one, except the separate-window mode is not used here: it
+            // falls back to a bottom dock. The normal console stays hidden on these tabs.
             ConsoleBorder.Visibility = Visibility.Collapsed;
             System.Windows.Controls.Grid.SetRowSpan(ConsoleBorder, 1);
-            PositionDockedConsole(HistoryConsoleBorder,
-                _consoleMode == ConsolePosition.Right ? ConsolePosition.Right : ConsolePosition.Bottom);
+            var own = history ? HistoryConsoleBorder : SignaturesConsoleBorder;
+            var ownMode = _consoleMode == ConsolePosition.Right ? ConsolePosition.Right : ConsolePosition.Bottom;
+            PositionDockedConsole(own, ownMode);
+            // Both own-console tabs need more table space: give the card
+            // OwnConsoleExtraCardHeight (55px) more height, and the docked console (a star
+            // row) takes that much less. Bottom dock only - the default view.
+            if (ownMode == ConsolePosition.Bottom)
+                TabCardRow.Height = new GridLength(MainCardHeight + OwnConsoleExtraCardHeight);
             return;
         }
 
@@ -2195,7 +2240,7 @@ public partial class MainWindow : Window
     private async Task ShowUpdateCheckAsync()
     {
         var asm = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        string appVersion = asm != null ? $"{asm.Major}.{asm.Minor}.{asm.Build}" : "1.0.2";
+        string appVersion = asm != null ? $"{asm.Major}.{asm.Minor}.{asm.Build}" : "1.0.3";
 
         var dialog = new UpdateCheckWindow(appVersion, _versionInfo?.Engine, AppendLine) { Owner = this };
         dialog.ShowDialog();

@@ -104,10 +104,12 @@ public static class ConfigSchema
     {
         Header("Update source"),
         T("DatabaseMirror", "Signature mirror [database.clamav.net]."),
-        T("PrivateMirror", "Private mirror URL, overrides DatabaseMirror [disabled]."),
-        T("DatabaseCustomURL", "Additional database from a custom URL [disabled]. Multiple entries: edit via Open file."),
-        T("ExtraDatabase", "Additional 3rd party database via ClamAV mirrors [disabled]. Multiple entries: edit via Open file."),
-        T("ExcludeDatabase", "Skip a standard database [disabled]. Multiple entries: edit via Open file."),
+        T("PrivateMirror", "Private mirror URL, overrides DatabaseMirror [disabled]. This is the source for the STANDARD databases (an internal/offline mirror), NOT a way to add a third-party database."),
+        // DatabaseCustomURL, ExtraDatabase and ExcludeDatabase are deliberately NOT listed
+        // here: adding third-party databases (raw URL or a mirror-hosted extra one) and
+        // disabling a database are managed on the Signatures tab now ("Add from URL", "Add
+        // database" and the table context menu). ClamConfFile still preserves any values
+        // already present in freshclam.conf, and they remain editable via "Open file".
         B("ScriptedUpdates", "Incremental updates instead of full downloads, keep enabled [yes]."),
         B("Bytecode", "Download bytecode signatures, recommended [yes]."),
 

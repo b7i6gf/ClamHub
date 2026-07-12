@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:local="clr-namespace:ClamHub"
-        Title="ClamHub 1.0.2" Height="710" Width="1068"
+        Title="ClamHub 1.0.3" Height="710" Width="1068"
         MinHeight="710" MinWidth="1068"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None" ResizeMode="CanResize"
@@ -36,7 +36,7 @@
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center"
                             Margin="14,0,0,0">
                     <TextBlock Text="ClamHub" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <TextBlock Text="1.0.2" Margin="8,0,0,0"
+                    <TextBlock Text="1.0.3" Margin="8,0,0,0"
                                Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center"/>
                 </StackPanel>
 
@@ -160,7 +160,7 @@
                 <RowDefinition x:Name="TabCardRow" Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- Tabs: Scan and Hash Verifier -->
+            <!-- Tabs: Scan and Hash-Verifier -->
             <Border Grid.Row="0" Background="{StaticResource PanelBrush}" CornerRadius="8"
                     Padding="16,10,16,14" MinHeight="250">
             <Grid>
@@ -361,7 +361,7 @@
                         </StackPanel>
 
                         <!-- Scan buttons pinned to the bottom of the card so they
-                             line up with the Hash Verifier compute button -->
+                             line up with the Hash-Verifier compute button -->
                         <Grid Grid.Row="6">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
@@ -374,7 +374,7 @@
 
                             <StackPanel Grid.Column="0" Orientation="Horizontal">
                                 <Button x:Name="MemoryScanButton" Content="Memory scan"
-                                        Width="120" Height="34" Click="MemoryScan_Click"/>
+                                        Width="120" Height="30" Click="MemoryScan_Click"/>
                                 <CheckBox x:Name="KillProcessesCheck" Content="Stop infected processes"
                                           Margin="10,0,0,0"
                                           ToolTip="Memory scan only: --kill --unload"/>
@@ -384,28 +384,28 @@
                                        VerticalAlignment="Center" Margin="0,0,20,0"
                                        FontWeight="SemiBold"/>
                             <Button Grid.Column="3" x:Name="CancelScanButton" Content="Cancel"
-                                    Width="90" Height="34" Margin="0,0,10,0"
+                                    Width="90" Height="30" Margin="0,0,10,0"
                                     IsEnabled="False" Click="CancelScan_Click"/>
                             <Button Grid.Column="4" x:Name="ScanVirusTotalButton" Content="VirusTotal"
-                                    Width="120" Height="34" Margin="0,0,10,0" IsEnabled="False"
+                                    Width="120" Height="30" Margin="0,0,10,0" IsEnabled="False"
                                     Click="ScanVirusTotal_Click"
                                     ToolTipService.ShowOnDisabled="True"
                                     ToolTip="Look up the file's SHA256 on VirusTotal. Only the hash is sent, never the file."/>
                             <StackPanel Grid.Column="5" Orientation="Horizontal">
                                 <Button x:Name="ScanNoDaemonButton" Content="Scan w/o daemon"
-                                        Width="130" Height="34" Margin="0,0,10,0"
+                                        Width="130" Height="30" Margin="0,0,10,0"
                                         Click="ScanNoDaemon_Click"
                                         ToolTip="Scan with standalone clamscan (never the daemon). Required for per-scan exclusions to take effect."/>
                                 <Button x:Name="ScanButton" Content="Start scan"
-                                        Width="120" Height="34" FontWeight="SemiBold"
+                                        Width="120" Height="30" FontWeight="SemiBold"
                                         Click="Scan_Click"/>
                             </StackPanel>
                         </Grid>
                     </Grid>
                 </TabItem>
 
-                <!-- Hash Verifier tab -->
-                <TabItem Header="Hash Verifier">
+                <!-- Hash-Verifier tab -->
+                <TabItem Header="Hash-Verifier">
                     <Grid Margin="0,12,0,0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -540,19 +540,28 @@
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
                             <TextBlock Text="Quarantined files" FontWeight="SemiBold"
                                        VerticalAlignment="Center"/>
-                            <Button Content="Refresh" Height="26" Margin="16,0,0,0"
+                            <!-- Grouped: view actions | external lookup | file actions.
+                                 The 12px margins (double the usual 6) are the visual
+                                 separators between the groups. -->
+                            <Button Content="Refresh" Height="30" Margin="16,0,0,0"
                                     Click="RefreshQuarantine_Click"/>
-                            <Button Content="Restore selected" Height="26" Margin="6,0,0,0"
-                                    Click="RestoreQuarantine_Click"
-                                    ToolTip="Move the file back to its original location"/>
-                            <Button Content="Delete selected" Height="26" Margin="6,0,0,0"
+                            <Button Content="Open folder" Height="30" Margin="6,0,0,0"
+                                    Click="OpenQuarantineFolder_Click"/>
+                            <Button x:Name="QuarantineVtButton" Content="VirusTotal" Height="30"
+                                    Margin="24,0,0,0" Click="QuarantineVirusTotal_Click"
+                                    ToolTipService.ShowOnDisabled="True"/>
+                            <Button Content="Delete selected" Height="30" Margin="24,0,0,0"
                                     Click="DeleteQuarantine_Click"
                                     ToolTip="Permanently delete the quarantined file"/>
-                            <Button x:Name="QuarantineVtButton" Content="VirusTotal" Height="26"
-                                    Margin="6,0,0,0" Click="QuarantineVirusTotal_Click"
-                                    ToolTipService.ShowOnDisabled="True"/>
-                            <Button Content="Open folder" Height="26" Margin="6,0,0,0"
-                                    Click="OpenQuarantineFolder_Click"/>
+                            <Button Content="Restore selected" Height="30" Margin="6,0,0,0"
+                                    Click="RestoreQuarantine_Click"
+                                    ToolTip="Move the file back to its original location"/>
+                            <Button Content="Restore + whitelist" Height="30" Margin="6,0,0,0"
+                                    Click="RestoreWhitelistQuarantine_Click"
+                                    ToolTip="Restore the file and add it to the whitelist so future scans ignore it (use only for confirmed false positives)"/>
+                            <Button Content="Compare with databanks" Height="30" Margin="6,0,0,0"
+                                    Click="CompareWithDatabanks_Click"
+                                    ToolTip="Search this threat's signature name across the ClamAV databases to see which of them detect it, and under which names"/>
                         </StackPanel>
 
                         <ListView Grid.Row="1" x:Name="QuarantineList"
@@ -561,6 +570,7 @@
                                   Foreground="{StaticResource TextBrush}"
                                   ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                   ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  ScrollViewer.CanContentScroll="False"
                                   ScrollViewer.ScrollChanged="Table_ScrollChanged"
                                   GridViewColumnHeader.Click="QuarantineSort_Click">
                             <ListView.View>
@@ -624,7 +634,143 @@
                     </Grid>
                 </TabItem>
 
-                <!-- History tab: table of past scans (its output panel is the
+                <!-- Signatures tab: official DB info + ClamHub's own block/allow lists -->
+                <TabItem Header="Signatures">
+                    <Grid Margin="0,12,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Header row like the other tabs: label + actions on the left,
+                             the add/manage group right-aligned (the gap between the two
+                             groups is the visual separator). -->
+                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                <TextBlock Text="Signature databases" FontWeight="SemiBold"
+                                           VerticalAlignment="Center"/>
+                                <Button x:Name="RefreshDbInfoButton" Content="Refresh info" Height="30"
+                                        Margin="16,0,0,0" Click="RefreshDbInfo_Click"/>
+                                <Button x:Name="OpenDbFolderButton" Content="Open DB folder" Height="30"
+                                        Margin="6,0,0,0" Click="OpenDbFolder_Click"/>
+                                <Button x:Name="SignaturesUpdateButton" Content="Update signatures" Height="30"
+                                        Margin="6,0,0,0" Click="Update_Click"
+                                        ToolTip="Download the latest signature databases (freshclam)"/>
+                                <Button x:Name="SearchSignaturesButton" Content="Search signatures" Height="30"
+                                        Margin="6,0,0,0" Click="SearchSignatures_Click"
+                                        ToolTip="Search or list the signatures inside the databases"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                <Button x:Name="AddDatabaseButton" Content="Add database" Height="30"
+                                        Margin="0,0,6,0" Click="AddDatabaseFile_Click"
+                                        ToolTip="Copy ClamAV database file(s) into the database folder"/>
+                                <Button x:Name="AddDatabaseUrlButton" Content="Add from URL" Height="30"
+                                        Margin="0,0,6,0" Click="AddDatabaseUrl_Click"
+                                        ToolTip="Manage extra databases downloaded from custom URLs (freshclam)"/>
+                                <Button x:Name="ManageListsButton" Content="Manage lists..." Height="30"
+                                        FontWeight="SemiBold" Click="ManageSignatureLists_Click"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Database table: one row per official DB; selecting a row
+                             shows its details in the Signatures console (bottom row). -->
+                        <ListView Grid.Row="1" x:Name="SignaturesDbList"
+                                  Background="{StaticResource PanelBrush}" BorderThickness="0" Padding="0"
+                                  Foreground="{StaticResource TextBrush}"
+                                  SelectionMode="Single"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  ScrollViewer.CanContentScroll="False"
+                                  GridViewColumnHeader.Click="SignaturesSort_Click"
+                                  ContextMenuOpening="SignaturesDbList_ContextMenuOpening"
+                                  SelectionChanged="SignaturesDbList_SelectionChanged"
+                                  KeyDown="SignaturesDbList_KeyDown">
+                            <ListView.ItemContainerStyle>
+                                <!-- Dim the row and add a tooltip for a database disabled for
+                                     scanning (the Database cell also shows a "(disabled)"
+                                     suffix via DisplayName). BasedOn keeps the app's row style. -->
+                                <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Excluded}" Value="True">
+                                            <Setter Property="Opacity" Value="0.5"/>
+                                            <Setter Property="ToolTip"
+                                                    Value="Disabled for scanning: clamd will not load this database, and standalone scans skip it too. Right-click to enable."/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.ContextMenu>
+                                <ContextMenu Opened="SignaturesContextMenu_Opened">
+                                    <MenuItem x:Name="ToggleExcludeMenuItem" Header="Disable database"
+                                              Click="ToggleDatabaseExclusion_Click"/>
+                                    <MenuItem Header="Remove database" Click="RemoveDatabase_Click"/>
+                                </ContextMenu>
+                            </ListView.ContextMenu>
+                            <ListView.View>
+                                <GridView x:Name="SignaturesGridView">
+                                    <GridViewColumn Width="175" DisplayMemberBinding="{Binding DisplayName}">
+                                        <GridViewColumn.Header>
+                                            <TextBlock Text="Database" Tag="FileName"
+                                                       ToolTip="Database file name. Click to sort."/>
+                                        </GridViewColumn.Header>
+                                    </GridViewColumn>
+                                    <GridViewColumn Width="115" DisplayMemberBinding="{Binding Version}">
+                                        <GridViewColumn.Header>
+                                            <TextBlock Text="Version" Tag="Version"
+                                                       ToolTip="Database version (containers only). Click to sort."/>
+                                        </GridViewColumn.Header>
+                                    </GridViewColumn>
+                                    <GridViewColumn Width="135" DisplayMemberBinding="{Binding Signatures}">
+                                        <GridViewColumn.Header>
+                                            <TextBlock Text="Signatures" Tag="Signatures"
+                                                       ToolTip="Number of signatures. Click to sort."/>
+                                        </GridViewColumn.Header>
+                                    </GridViewColumn>
+                                    <GridViewColumn Width="205" DisplayMemberBinding="{Binding Built}">
+                                        <GridViewColumn.Header>
+                                            <TextBlock Text="Built" Tag="Built"
+                                                       ToolTip="Build time (containers) or file date. Click to sort."/>
+                                        </GridViewColumn.Header>
+                                    </GridViewColumn>
+                                    <GridViewColumn Width="110" DisplayMemberBinding="{Binding Status}">
+                                        <GridViewColumn.Header>
+                                            <TextBlock Text="Verified" Tag="Status"
+                                                       ToolTip="Signature verification status. Click to sort."/>
+                                        </GridViewColumn.Header>
+                                    </GridViewColumn>
+                                    <GridViewColumn Width="240">
+                                        <GridViewColumn.Header>
+                                            <TextBlock Text="URL" Tag="Url"
+                                                       ToolTip="Custom download URL, if any. Click to sort."/>
+                                        </GridViewColumn.Header>
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock TextTrimming="CharacterEllipsis">
+                                                    <Hyperlink Click="DatabaseUrl_Click"
+                                                               Foreground="{StaticResource AccentBrush}"
+                                                               ToolTip="{Binding Url, Mode=OneWay}">
+                                                        <!-- Mode=OneWay is REQUIRED: Run.Text binds
+                                                             TwoWay by default and Url is read-only;
+                                                             a TwoWay binding to a read-only property
+                                                             throws during layout and killed the tab. -->
+                                                        <Run Text="{Binding Url, Mode=OneWay}"/>
+                                                    </Hyperlink>
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                    </Grid>
+                </TabItem>
+
+                <!-- History tab: table of past actions (its output panel is the
                      HistoryConsoleBorder shown in the bottom row) -->
                 <TabItem Header="History">
                     <Grid Margin="0,12,0,0">
@@ -634,17 +780,17 @@
                         </Grid.RowDefinitions>
 
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-                            <TextBlock Text="Past scans" FontWeight="SemiBold"
+                            <TextBlock Text="Past actions" FontWeight="SemiBold"
                                        VerticalAlignment="Center"/>
-                            <Button Content="Refresh" Height="26" Margin="16,0,0,0"
+                            <Button Content="Refresh" Height="30" Margin="16,0,0,0"
                                     Click="RefreshHistory_Click"/>
-                            <Button Content="Open history file" Height="26" Margin="6,0,0,0"
+                            <Button Content="Open history file" Height="30" Margin="6,0,0,0"
                                     Click="OpenHistoryFile_Click"
                                     ToolTip="Open Logs\history.json"/>
-                            <Button Content="Delete entry" Height="26" Margin="6,0,0,0"
+                            <Button Content="Delete entry" Height="30" Margin="6,0,0,0"
                                     Click="DeleteHistoryEntry_Click"
                                     ToolTip="Remove the selected scan from the history"/>
-                            <Button Content="Clear history" Height="26" Margin="6,0,0,0"
+                            <Button Content="Clear history" Height="30" Margin="6,0,0,0"
                                     Click="ClearHistory_Click"/>
                         </StackPanel>
 
@@ -654,6 +800,7 @@
                                   Foreground="{StaticResource TextBrush}"
                                   ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                   ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  ScrollViewer.CanContentScroll="False"
                                   ScrollViewer.ScrollChanged="Table_ScrollChanged"
                                   GridViewColumnHeader.Click="HistorySort_Click"
                                   SelectionChanged="HistoryList_SelectionChanged">
@@ -893,6 +1040,9 @@
                                 <Button Content="Rebuild config" Width="118" Height="30" Margin="0,0,6,6"
                                         Click="RebuildConfig_Click" Tag="clamd"
                                         ToolTip="Rewrite this file with correct database and log paths (asks whether to keep your settings)"/>
+                                <Button Content="Reload daemon" Width="118" Height="30" Margin="0,0,6,6"
+                                        Click="ReloadDaemon_Click"
+                                        ToolTip="Restart the running daemon so signature/config changes take effect (safe when it is stopped)"/>
                             </WrapPanel>
                         </Grid>
 
@@ -955,10 +1105,10 @@
                     <TextBlock Grid.Column="0" Text="Output" FontWeight="SemiBold"
                                VerticalAlignment="Center"/>
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <Button Content="Open logs folder" Height="26" Margin="0,0,6,0"
+                        <Button Content="Open logs folder" Height="30" Margin="0,0,6,0"
                                 Click="OpenLogsFolder_Click"
                                 ToolTip="Show the Logs directory in Explorer"/>
-                        <Button Content="Clear output" Height="26"
+                        <Button Content="Clear output" Height="30"
                                 Click="ClearConsole_Click"/>
                     </StackPanel>
                 </Grid>
@@ -987,6 +1137,28 @@
                 </Grid.RowDefinitions>
                 <TextBlock Grid.Row="0" Text="Contents" FontWeight="SemiBold" Margin="0,0,0,6"/>
                 <RichTextBox Grid.Row="1" x:Name="HistoryDetailBox" IsReadOnly="True" IsDocumentEnabled="True"
+                             IsUndoEnabled="False"
+                             Background="#FF17181C" Foreground="#FFD6D6D6" BorderThickness="0"
+                             FontFamily="Consolas" FontSize="12" Padding="8"
+                             VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Disabled">
+                    <FlowDocument PagePadding="0"/>
+                </RichTextBox>
+            </Grid>
+        </Border>
+
+        <!-- Signatures tab output: its own PanelBrush card in the bottom row, shown
+             only on the Signatures tab. Holds the selected database's sigtool details. -->
+        <Border Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" x:Name="SignaturesConsoleBorder"
+                Background="{StaticResource PanelBrush}" CornerRadius="8"
+                Padding="12" Margin="0,16,0,0" Visibility="Collapsed">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="Database details" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <RichTextBox Grid.Row="1" x:Name="SignaturesDetailBox" IsReadOnly="True" IsDocumentEnabled="True"
                              IsUndoEnabled="False"
                              Background="#FF17181C" Foreground="#FFD6D6D6" BorderThickness="0"
                              FontFamily="Consolas" FontSize="12" Padding="8"

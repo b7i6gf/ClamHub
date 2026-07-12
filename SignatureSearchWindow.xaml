@@ -1,0 +1,187 @@
+<Window x:Class="ClamHub.SignatureSearchWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="Search signatures" Height="660" Width="1020"
+        MinHeight="500" MinWidth="820"
+        WindowStartupLocation="CenterOwner" WindowStyle="None" ResizeMode="CanResize"
+        Background="{StaticResource BgBrush}">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="6"
+                            CornerRadius="0" GlassFrameThickness="0"
+                            UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+
+    <Border BorderBrush="{StaticResource WindowBorderBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="36"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Title bar -->
+            <Grid Grid.Row="0" Background="{StaticResource TitleBarBrush}">
+                <TextBlock Text="Search signatures" FontWeight="SemiBold"
+                           VerticalAlignment="Center" Margin="14,0,0,0"/>
+                <Button HorizontalAlignment="Right" Style="{StaticResource CloseCaptionButton}"
+                        Click="Close_Click" ToolTip="Close"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Path Data="M0,0 L10,10 M0,10 L10,0" Stroke="{StaticResource TextBrush}"
+                          StrokeThickness="1"/>
+                </Button>
+            </Grid>
+
+            <!-- Content -->
+            <Grid Grid.Row="1" Margin="20,16,20,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="230"/>
+                    <ColumnDefinition Width="16"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Database picker -->
+                <Grid Grid.Column="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="Databases" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                    <Border Grid.Row="1" Background="{StaticResource PanelBrush}" CornerRadius="6" Padding="4">
+                        <ListBox x:Name="DbList" Background="Transparent" BorderThickness="0"
+                                 Foreground="{StaticResource TextBrush}"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="HorizontalAlignment" Value="Left"/>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                              Content="{Binding Label}" Margin="2"/>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                    <WrapPanel Grid.Row="2" Margin="0,8,0,0">
+                        <Button Content="All" Width="60" Height="26" Margin="0,0,6,0" Click="SelectAll_Click"/>
+                        <Button Content="None" Width="60" Height="26" Click="SelectNone_Click"/>
+                    </WrapPanel>
+                </Grid>
+
+                <!-- Search + results -->
+                <Grid Grid.Column="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="170"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,10"
+                               Foreground="{StaticResource MutedTextBrush}"
+                               Text="Enter a regular expression to match signature names, or leave it empty to list every signature of the selected databases. Container databases (.cvd/.cld) are read through sigtool and can be slow; select a result to decode it."/>
+
+                    <!-- Query row -->
+                    <Grid Grid.Row="1" Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" x:Name="PatternBox" Height="30" Margin="0,0,8,0"
+                                 VerticalContentAlignment="Center" KeyDown="PatternBox_KeyDown"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <ComboBox x:Name="ModeBox" Width="170" Height="30" Margin="0,0,10,0"
+                                      VerticalContentAlignment="Center"
+                                      SelectionChanged="ModeBox_SelectionChanged"
+                                      ToolTip="Search signatures, or group them to find duplicates">
+                                <ComboBoxItem Content="Search" IsSelected="True"/>
+                                <ComboBoxItem Content="Duplicates by name"/>
+                                <ComboBoxItem Content="Duplicates by content"/>
+                            </ComboBox>
+                            <CheckBox x:Name="MatchRawBox" Content="Match whole line" VerticalAlignment="Center"
+                                      Margin="0,0,10,0"
+                                      ToolTip="Match the pattern against the full signature line instead of just its name (text databases only)"/>
+                            <Button x:Name="SearchButton" Content="Search" Width="90" Height="30"
+                                    Margin="0,0,8,0" FontWeight="SemiBold" Click="Search_Click"/>
+                            <Button x:Name="StopButton" Content="Stop" Width="70" Height="30"
+                                    IsEnabled="False" Click="Stop_Click"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Results -->
+                    <ListView Grid.Row="2" x:Name="ResultList"
+                              Background="{StaticResource PanelBrush}" BorderThickness="0" Padding="0"
+                              Foreground="{StaticResource TextBrush}" SelectionMode="Single"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              VirtualizingPanel.ScrollUnit="Pixel"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                              SelectionChanged="ResultList_SelectionChanged">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="Database" Width="180"
+                                                DisplayMemberBinding="{Binding Database}"/>
+                                <GridViewColumn Header="Signature" Width="420"
+                                                DisplayMemberBinding="{Binding Name}"/>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+
+                    <!-- Duplicate groups (same cell; only one of the two tables is visible) -->
+                    <ListView Grid.Row="2" x:Name="DuplicateList" Visibility="Collapsed"
+                              Background="{StaticResource PanelBrush}" BorderThickness="0" Padding="0"
+                              Foreground="{StaticResource TextBrush}" SelectionMode="Single"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              VirtualizingPanel.ScrollUnit="Pixel"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                              SelectionChanged="DuplicateList_SelectionChanged">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="Signature" Width="360"
+                                                DisplayMemberBinding="{Binding Signature}"/>
+                                <GridViewColumn Header="Count" Width="70"
+                                                DisplayMemberBinding="{Binding Count}"/>
+                                <GridViewColumn Header="Databases" Width="260"
+                                                DisplayMemberBinding="{Binding Databases}"/>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+
+                    <TextBlock Grid.Row="3" Text="Decoded signature" FontWeight="SemiBold" Margin="0,12,0,6"/>
+
+                    <!-- Decode output -->
+                    <Border Grid.Row="4" Background="#FF17181C" CornerRadius="6" Padding="2">
+                        <TextBox x:Name="DecodeBox" IsReadOnly="True" Background="Transparent"
+                                 BorderThickness="0" Foreground="#FFD6D6D6" FontFamily="Consolas" FontSize="12"
+                                 Padding="6" TextWrapping="NoWrap"
+                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <!-- Footer -->
+            <Grid Grid.Row="2" Margin="20,4,20,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                    <TextBlock x:Name="StatusText" TextWrapping="Wrap"
+                               Foreground="{StaticResource MutedTextBrush}"
+                               Text="Select databases and search."/>
+                    <ProgressBar x:Name="WorkBar" Height="6" Margin="0,6,0,0"
+                                 IsIndeterminate="True" Visibility="Collapsed"/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="Close" Width="110" Height="32"
+                        FontWeight="SemiBold" Click="Close_Click"/>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

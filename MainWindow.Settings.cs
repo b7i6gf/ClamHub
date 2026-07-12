@@ -563,6 +563,14 @@ public partial class MainWindow
     }
 
     /// <summary>
+    /// "Reload daemon" button: reliably reloads the running daemon so custom-signature
+    /// or config changes take effect (restart under the hood; see ReloadDaemonAsync).
+    /// Feedback appears in this status line. Called from: XAML Click binding.
+    /// </summary>
+    private async void ReloadDaemon_Click(object sender, RoutedEventArgs e)
+        => await ReloadDaemonAsync();
+
+    /// <summary>
     /// Opens the raw conf file in the default text editor for parameters the
     /// typed editor does not cover. Called from: XAML Click binding (Open file).
     /// </summary>
