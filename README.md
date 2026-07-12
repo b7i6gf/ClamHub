@@ -68,6 +68,20 @@ Shows every file ClamHub has quarantined, with the original path, date and file 
 - **Check it on VirusTotal** using its stored hash
   
 ---
+### Signatures (Introduced in 1.0.3)
+<p align="center">
+<img src="Docs/Signatures.png" alt="ClamHub" width="700"/>
+</p>
+
+- See all relevant information about the database you selected within the tab
+- Easily add custom URLs from third-party database providers by pressing the button "Add from URL"
+- Manage black- and whitelist entries; a new context menu entry got introduced to quickly add entries to the lists -> "Put on List"
+- Search for signatures within all or selected databases; you can also compare the signature of quarantined files with the databases
+- Select and disable databases to exclude those signatures for scans. Simply right-click on an entry and select "Disable database". When databases get disabled, they will be moved in a separate folder to ensure freshclam will not delete it. Therefore all disabled databases will not be updated as well!
+- Quickly remove databases by right-clicking an entry and select "Remove database"
+
+
+---
 
 ### History
 <p align="center">
