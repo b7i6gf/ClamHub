@@ -85,10 +85,13 @@ public static class ContextMenuManager
             ContextScope.File | ContextScope.Directory | ContextScope.Background, 50),
     };
 
-    // Shell subkey roots for the three relevant classes.
+    // Shell subkey roots for the four relevant classes. Drive is separate from
+    // Directory in the shell: without it the entries never appear (or never work)
+    // when right-clicking a drive like "C:" in This PC.
     private const string FileRoot = @"Software\Classes\*\shell";
     private const string DirectoryRoot = @"Software\Classes\Directory\shell";
     private const string BackgroundRoot = @"Software\Classes\Directory\Background\shell";
+    private const string DriveRoot = @"Software\Classes\Drive\shell";
 
     /// <summary>
     /// A node in the context menu tree built for the registry: a leaf (has a
@@ -188,6 +191,10 @@ public static class ContextMenuManager
 
             WriteScope(FileRoot, "%1", ContextScope.File, enabled, s);
             WriteScope(DirectoryRoot, "%1", ContextScope.Directory, enabled, s);
+            // Drives get the same directory-scoped actions; %1 expands to "C:\".
+            // (The trailing backslash before the closing quote is undone in
+            // App.NormalizeContextPath when the command line is parsed.)
+            WriteScope(DriveRoot, "%1", ContextScope.Directory, enabled, s);
             // The background entry acts on the folder currently open in Explorer (%V).
             WriteScope(BackgroundRoot, "%V", ContextScope.Background, enabled, s);
         }
@@ -198,7 +205,7 @@ public static class ContextMenuManager
     }
 
     /// <summary>
-    /// Removes every ClamHub context menu entry from all three classes.
+    /// Removes every ClamHub context menu entry from all four classes.
     /// Called from: settings tab (when no entry is selected) and SyncToSettings.
     /// </summary>
     public static void Unregister(out string? error)
@@ -366,6 +373,7 @@ public static class ContextMenuManager
     {
         RemoveScope(FileRoot);
         RemoveScope(DirectoryRoot);
+        RemoveScope(DriveRoot);
         RemoveScope(BackgroundRoot);
     }
 

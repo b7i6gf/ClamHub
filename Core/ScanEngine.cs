@@ -38,12 +38,17 @@ public static class ScanEngine
         IReadOnlyList<string>? ExcludeFiles = null,
         DaemonUsage DaemonMode = DaemonUsage.Auto);
 
-    /// <summary>Outcome of a scan. InfectedLines holds the raw FOUND lines.</summary>
+    /// <summary>
+    /// Outcome of a scan. InfectedLines holds the raw FOUND lines; ErrorLines the
+    /// raw ERROR lines (files ClamAV could not scan, e.g. locked or access denied),
+    /// so History can list them instead of a bare "Error" result.
+    /// </summary>
     public record ScanResult(
         bool Started,
         int ExitCode,
         bool UsedDaemon,
         List<string> InfectedLines,
+        List<string> ErrorLines,
         string? Error);
 
     /// <summary>True while a scan is running, prevents overlapping scans.</summary>
@@ -60,16 +65,16 @@ public static class ScanEngine
         CancellationToken cancel = default)
     {
         if (ScanInProgress)
-            return new ScanResult(false, -1, false, new(), "A scan is already running.");
+            return new ScanResult(false, -1, false, new(), new(), "A scan is already running.");
 
         // Validate the target before launching anything.
         if (options.Mode == ScanMode.Path)
         {
             if (string.IsNullOrWhiteSpace(options.TargetPath))
-                return new ScanResult(false, -1, false, new(), "No target path given.");
+                return new ScanResult(false, -1, false, new(), new(), "No target path given.");
             var clean = options.TargetPath.Replace("\"", "").Trim();
             if (!File.Exists(clean) && !Directory.Exists(clean))
-                return new ScanResult(false, -1, false, new(), $"Target not found: {clean}");
+                return new ScanResult(false, -1, false, new(), new(), $"Target not found: {clean}");
             options = options with { TargetPath = clean };
         }
 
@@ -124,17 +129,24 @@ public static class ScanEngine
 
             onOutput($"Running: {Path.GetFileName(exe)} {args}");
             var infected = new List<string>();
+            var errors = new List<string>();
 
             var result = await ProcessRunner.RunAsync(exe, args, line =>
             {
                 // clamd(scan) reports infections as "<path>: <signature> FOUND"
                 if (line.EndsWith(" FOUND", StringComparison.Ordinal))
                     infected.Add(line);
+                // Per-file scan failures end in " ERROR" ("<path>: <reason> ERROR");
+                // global failures start with "ERROR:". Both are kept so History can
+                // list exactly which files could not be scanned.
+                else if (line.EndsWith(" ERROR", StringComparison.Ordinal)
+                         || line.StartsWith("ERROR:", StringComparison.Ordinal))
+                    errors.Add(line);
                 onOutput(line);
             }, cancel);
 
             if (!result.Started)
-                return new ScanResult(false, -1, useDaemon, infected, result.StartError);
+                return new ScanResult(false, -1, useDaemon, infected, errors, result.StartError);
 
             onOutput(result.ExitCode switch
             {
@@ -143,12 +155,12 @@ public static class ScanEngine
                 _ => $"Scan finished with errors (exit code {result.ExitCode})."
             });
 
-            return new ScanResult(true, result.ExitCode, useDaemon, infected, null);
+            return new ScanResult(true, result.ExitCode, useDaemon, infected, errors, null);
         }
         catch (OperationCanceledException)
         {
             onOutput("Scan cancelled by user.");
-            return new ScanResult(true, -1, useDaemon, new(), "Cancelled");
+            return new ScanResult(true, -1, useDaemon, new(), new(), "Cancelled");
         }
         finally
         {

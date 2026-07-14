@@ -57,6 +57,19 @@ public static class HistoryManager
         if (Entries.Remove(entry)) Save();
     }
 
+    /// <summary>
+    /// Removes several entries with a single save (multi-selection delete,
+    /// v1.0.3.5). Returns how many were removed. Called from: MainWindow.History.cs.
+    /// </summary>
+    public static int DeleteMany(IEnumerable<ScanHistoryEntry> entries)
+    {
+        int removed = 0;
+        foreach (var entry in entries.ToList())
+            if (Entries.Remove(entry)) removed++;
+        if (removed > 0) Save();
+        return removed;
+    }
+
     /// <summary>Clears the whole history and saves. Called from: MainWindow.History.cs.</summary>
     public static void Clear()
     {

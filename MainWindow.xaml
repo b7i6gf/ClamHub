@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:local="clr-namespace:ClamHub"
-        Title="ClamHub 1.0.3" Height="710" Width="1068"
+        Title="ClamHub 1.0.3.6" Height="710" Width="1068"
         MinHeight="710" MinWidth="1068"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None" ResizeMode="CanResize"
@@ -36,7 +36,7 @@
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center"
                             Margin="14,0,0,0">
                     <TextBlock Text="ClamHub" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <TextBlock Text="1.0.3" Margin="8,0,0,0"
+                    <TextBlock Text="1.0.3.6" Margin="8,0,0,0"
                                Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center"/>
                 </StackPanel>
 
@@ -81,10 +81,15 @@
                     </RadioButton>
                 </StackPanel>
 
-                <!-- About -->
-                <Button Grid.Column="2" Content="About" Style="{StaticResource TitleBarTextButton}"
-                        Click="About_Click"
-                        shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
+                <!-- Detections + About -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button Content="Detections" Style="{StaticResource TitleBarTextButton}"
+                            Click="Detections_Click"
+                            ToolTip="Infected files reported by scans, to work through"/>
+                    <Button Content="About" Style="{StaticResource TitleBarTextButton}"
+                            Click="About_Click"/>
+                </StackPanel>
 
                 <!-- Window control buttons -->
                 <StackPanel Grid.Column="3" Orientation="Horizontal"

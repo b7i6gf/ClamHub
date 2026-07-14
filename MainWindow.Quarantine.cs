@@ -35,6 +35,12 @@ public partial class MainWindow
     }
 
     /// <summary>
+    /// Rebinds the quarantine list for callers outside this class (the Detections
+    /// window quarantines files too). Called from: DetectionsWindow.Quarantine_Click.
+    /// </summary>
+    internal void RefreshQuarantineView() => BindQuarantine();
+
+    /// <summary>
     /// Moves the scan's infected files into quarantine (GUI-managed move that
     /// keeps the original path for an exact restore). Returns how many were
     /// moved successfully. Called from: RunScanGuarded after a Quarantine scan.
@@ -70,88 +76,132 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Restores the selected file to its original path, asking before
-    /// overwriting an existing file. Called from: XAML Click binding.
+    /// Returns a snapshot of the selected quarantine entries (multi-selection with
+    /// Ctrl/Shift, v1.0.3.5), with a status hint when nothing is selected.
+    /// Called from: the quarantine action handlers.
     /// </summary>
-    private void RestoreQuarantine_Click(object sender, RoutedEventArgs e)
+    private List<QuarantineEntry> SelectedQuarantineEntries(string emptyHint)
     {
-        if (QuarantineList.SelectedItem is not QuarantineEntry entry)
-        {
-            QuarantineStatus.Text = "Select a file to restore.";
-            return;
-        }
+        var list = QuarantineList.SelectedItems.Cast<QuarantineEntry>().ToList();
+        if (list.Count == 0) QuarantineStatus.Text = emptyHint;
+        return list;
+    }
 
-        if (!Confirm("Restore from quarantine",
-                $"Restore \"{entry.OriginalName}\" to:\n{entry.OriginalPath}\n\n" +
-                "This file was flagged as infected. Restore anyway?",
-                "Restore", "Cancel"))
-            return;
-
-        if (!QuarantineManager.Restore(entry, overwrite: false, out var error))
-        {
-            // Offer overwrite when the only problem is an existing target file.
-            if (error != null && error.Contains("already exists"))
-            {
-                if (!Confirm("Overwrite",
-                        "A file already exists at the original location. Overwrite it?",
-                        "Overwrite", "Cancel"))
-                    return;
-
-                if (QuarantineManager.Restore(entry, overwrite: true, out var overwriteError))
-                    Finish(entry, "restored (overwritten)");
-                else
-                    QuarantineStatus.Text = overwriteError ?? "Restore failed.";
-                return;
-            }
-            QuarantineStatus.Text = error ?? "Restore failed.";
-            return;
-        }
-        Finish(entry, "restored");
-
-        void Finish(QuarantineEntry en, string verb)
-        {
-            BindQuarantine();
-            AppendSection("QUARANTINE");
-            AppendLine($"{en.OriginalName} {verb} to {en.OriginalPath}");
-            AddHistory("Quarantine action", en.OriginalPath, "", "Restored",
-                $"Restored from quarantine.{Environment.NewLine}" +
-                $"File: {en.OriginalName}{Environment.NewLine}" +
-                $"To: {en.OriginalPath}" +
-                (verb.Contains("overwritten") ? $"{Environment.NewLine}(an existing file was overwritten)" : ""));
-        }
+    /// <summary>Preview text for batch confirmations (up to 5 names). Called from: the quarantine handlers.</summary>
+    private static string QuarantinePreview(IReadOnlyList<QuarantineEntry> entries)
+    {
+        string preview = string.Join("\n", entries.Take(5).Select(x => x.OriginalName));
+        if (entries.Count > 5) preview += $"\n...and {entries.Count - 5} more";
+        return preview;
     }
 
     /// <summary>
-    /// Permanently deletes the selected quarantined file after confirmation.
-    /// Called from: XAML Click binding.
+    /// Restores ONE quarantined file, asking per file before overwriting an
+    /// existing target, and writes the console line + History record on success.
+    /// Returns true when the file is back at its original path. Called from:
+    /// RestoreQuarantine_Click and RestoreWhitelistQuarantine_Click (batch loops).
+    /// </summary>
+    private bool RestoreOneQuarantine(QuarantineEntry entry)
+    {
+        bool overwritten = false;
+        if (!QuarantineManager.Restore(entry, overwrite: false, out var error))
+        {
+            // Offer overwrite when the only problem is an existing target file.
+            if (error == null || !error.Contains("already exists"))
+            {
+                AppendLine($"{entry.OriginalName}: restore failed: {error ?? "unknown error"}");
+                return false;
+            }
+            if (!Confirm("Overwrite",
+                    $"A file already exists at:\n{entry.OriginalPath}\n\nOverwrite it?",
+                    "Overwrite", "Cancel"))
+            {
+                AppendLine($"{entry.OriginalName}: restore skipped (a file exists at the target).");
+                return false;
+            }
+            if (!QuarantineManager.Restore(entry, overwrite: true, out var overwriteError))
+            {
+                AppendLine($"{entry.OriginalName}: restore failed: {overwriteError ?? "unknown error"}");
+                return false;
+            }
+            overwritten = true;
+        }
+
+        AppendLine($"{entry.OriginalName} restored{(overwritten ? " (overwritten)" : "")} to {entry.OriginalPath}");
+        AddHistory("Quarantine action", entry.OriginalPath, "", "Restored",
+            $"Restored from quarantine.{Environment.NewLine}" +
+            $"File: {entry.OriginalName}{Environment.NewLine}" +
+            $"To: {entry.OriginalPath}" +
+            (overwritten ? $"{Environment.NewLine}(an existing file was overwritten)" : ""));
+        return true;
+    }
+
+    /// <summary>
+    /// Restores the selected file(s) to their original paths (one combined
+    /// confirmation; overwrite conflicts are asked per file). Called from: XAML
+    /// Click binding.
+    /// </summary>
+    private void RestoreQuarantine_Click(object sender, RoutedEventArgs e)
+    {
+        var entries = SelectedQuarantineEntries("Select one or more files to restore.");
+        if (entries.Count == 0) return;
+
+        if (!Confirm("Restore from quarantine",
+                $"Restore {entries.Count} file(s) to their original locations?\n\n{QuarantinePreview(entries)}\n\n" +
+                "These files were flagged as infected. Restore anyway?",
+                "Restore", "Cancel"))
+            return;
+
+        AppendSection("QUARANTINE");
+        int done = 0;
+        foreach (var entry in entries)
+            if (RestoreOneQuarantine(entry)) done++;
+
+        BindQuarantine();
+        QuarantineStatus.Text = done == entries.Count
+            ? $"{done} file(s) restored."
+            : $"{done} of {entries.Count} restored (see console).";
+    }
+
+    /// <summary>
+    /// Permanently deletes the selected quarantined file(s) after one combined
+    /// confirmation. Called from: XAML Click binding.
     /// </summary>
     private void DeleteQuarantine_Click(object sender, RoutedEventArgs e)
     {
-        if (QuarantineList.SelectedItem is not QuarantineEntry entry)
-        {
-            QuarantineStatus.Text = "Select a file to delete.";
-            return;
-        }
+        var entries = SelectedQuarantineEntries("Select one or more files to delete.");
+        if (entries.Count == 0) return;
 
         if (!Confirm("Delete from quarantine",
-                $"Permanently delete \"{entry.OriginalName}\"?\nThis cannot be undone.",
+                $"Permanently delete {entries.Count} file(s) from quarantine?\n\n{QuarantinePreview(entries)}\n\n" +
+                "This cannot be undone.",
                 "Delete", "Cancel"))
             return;
 
-        if (QuarantineManager.Delete(entry, out var error))
+        AppendSection("QUARANTINE");
+        int done = 0, failed = 0;
+        foreach (var entry in entries)
         {
-            BindQuarantine();
-            AppendSection("QUARANTINE");
-            AppendLine($"{entry.OriginalName} permanently deleted.");
-            AddHistory("Quarantine action", entry.OriginalPath, "", "Removed",
-                $"Permanently removed from quarantine.{Environment.NewLine}" +
-                $"File: {entry.OriginalName}{Environment.NewLine}" +
-                $"Original path: {entry.OriginalPath}");
+            if (QuarantineManager.Delete(entry, out var error))
+            {
+                done++;
+                AppendLine($"{entry.OriginalName} permanently deleted.");
+                AddHistory("Quarantine action", entry.OriginalPath, "", "Removed",
+                    $"Permanently removed from quarantine.{Environment.NewLine}" +
+                    $"File: {entry.OriginalName}{Environment.NewLine}" +
+                    $"Original path: {entry.OriginalPath}");
+            }
+            else
+            {
+                failed++;
+                AppendLine($"{entry.OriginalName}: delete failed: {error ?? "unknown error"}");
+            }
         }
-        else
-        {
-            QuarantineStatus.Text = error ?? "Delete failed.";
-        }
+
+        BindQuarantine();
+        QuarantineStatus.Text = failed == 0
+            ? $"{done} file(s) permanently deleted."
+            : $"{done} deleted, {failed} failed (see console).";
     }
 
     /// <summary>
@@ -162,20 +212,27 @@ public partial class MainWindow
     /// </summary>
     private async void QuarantineVirusTotal_Click(object sender, RoutedEventArgs e)
     {
-        if (QuarantineList.SelectedItem is not QuarantineEntry entry)
-        {
-            QuarantineStatus.Text = "Select a file to check on VirusTotal.";
-            return;
-        }
-        var sha256 = QuarantineManager.ComputeOriginalSha256(entry, out var error);
-        if (sha256 == null)
+        var entries = SelectedQuarantineEntries("Select one or more files to check on VirusTotal.");
+        if (entries.Count == 0) return;
+
+        if (entries.Count > 4)
         {
             AppendSection("VIRUSTOTAL");
-            AppendLine($"Could not read the quarantined file to hash it: {error}");
-            return;
+            AppendLine($"{entries.Count} lookups queued; the free VirusTotal tier allows 4 per minute, so this takes a while.");
         }
-        var stored = System.IO.Path.Combine(AppPaths.QuarantineDir, entry.Id);
-        await RunVirusTotalLookup(stored, entry.OriginalName, sha256);
+
+        foreach (var entry in entries)
+        {
+            var sha256 = QuarantineManager.ComputeOriginalSha256(entry, out var error);
+            if (sha256 == null)
+            {
+                AppendSection("VIRUSTOTAL");
+                AppendLine($"{entry.OriginalName}: could not read the quarantined file to hash it: {error}");
+                continue;
+            }
+            var stored = System.IO.Path.Combine(AppPaths.QuarantineDir, entry.Id);
+            await RunVirusTotalLookup(stored, entry.OriginalName, sha256);
+        }
     }
 
     /// <summary>
@@ -187,6 +244,7 @@ public partial class MainWindow
     /// </summary>
     private void CompareWithDatabanks_Click(object sender, RoutedEventArgs e)
     {
+        // Acts on the FIRST selected entry (one search window per signature).
         if (QuarantineList.SelectedItem is not QuarantineEntry entry)
         {
             QuarantineStatus.Text = "Select a file to compare with the databases.";
@@ -208,8 +266,9 @@ public partial class MainWindow
         if (threat.EndsWith(unofficial, StringComparison.OrdinalIgnoreCase))
             threat = threat[..^unofficial.Length];
 
-        // Modal, like the Signatures tab's search opener. The constructor runs the search.
-        new SignatureSearchWindow(threat) { Owner = this }.ShowDialog();
+        // Non-modal and ownerless (v1.0.3.6), like the Signatures tab's search
+        // opener. The constructor runs the search.
+        ToolWindows.Show(new SignatureSearchWindow(threat), this);
     }
 
     /// <summary>Opens the quarantine folder in Explorer. Called from: XAML Click binding.</summary>
@@ -226,91 +285,68 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Restores the selected file AND adds it to the whitelist so future scans ignore
-    /// it (for confirmed false positives). Restores first (with the same overwrite
-    /// prompt as a normal restore), then whitelists the restored file through the shared
-    /// flow (ApplySignatureAddAsync: mutual exclusion with the blacklist + a History
-    /// entry) and reloads the daemon reliably. Called from: XAML Click binding
-    /// (Restore + whitelist).
+    /// Restores the selected file(s) AND adds them to the whitelist so future scans
+    /// ignore them (for confirmed false positives). One combined confirmation;
+    /// restores first (per-file overwrite prompt as in a normal restore), then
+    /// whitelists all restored files in ONE pass through the shared flow
+    /// (ApplySignatureAddAsync: mutual exclusion with the blacklist + a History
+    /// entry). No automatic daemon reload, only the DaemonReloadNote hint.
+    /// Called from: XAML Click binding (Restore + whitelist).
     /// </summary>
     private async void RestoreWhitelistQuarantine_Click(object sender, RoutedEventArgs e)
     {
-        if (QuarantineList.SelectedItem is not QuarantineEntry entry)
-        {
-            QuarantineStatus.Text = "Select a file to restore and whitelist.";
-            return;
-        }
+        var entries = SelectedQuarantineEntries("Select one or more files to restore and whitelist.");
+        if (entries.Count == 0) return;
 
         if (!Confirm("Restore and whitelist",
-                $"Restore \"{entry.OriginalName}\" to:\n{entry.OriginalPath}\n\n" +
-                "and add it to the whitelist so future scans ignore this exact file. " +
-                "Only do this if you are sure the detection is a false positive.",
+                $"Restore {entries.Count} file(s) to their original locations\n\n{QuarantinePreview(entries)}\n\n" +
+                "and add them to the whitelist so future scans ignore these exact files. " +
+                "Only do this if you are sure the detections are false positives.",
                 "Restore + whitelist", "Cancel"))
             return;
 
-        // Step 1 - restore, reusing the same existing-file overwrite prompt as a normal restore.
-        if (!QuarantineManager.Restore(entry, overwrite: false, out var error))
-        {
-            if (error != null && error.Contains("already exists"))
-            {
-                if (!Confirm("Overwrite",
-                        "A file already exists at the original location. Overwrite it?",
-                        "Overwrite", "Cancel"))
-                    return;
-                if (!QuarantineManager.Restore(entry, overwrite: true, out var overwriteError))
-                {
-                    QuarantineStatus.Text = overwriteError ?? "Restore failed.";
-                    return;
-                }
-            }
-            else
-            {
-                QuarantineStatus.Text = error ?? "Restore failed.";
-                return;
-            }
-        }
-
-        BindQuarantine();
+        // Step 1 - restore each file, reusing the same per-file overwrite prompt as
+        // a normal restore. Each success writes its own console line + History record.
         AppendSection("QUARANTINE");
-        AppendLine($"{entry.OriginalName} restored to {entry.OriginalPath}");
+        var restored = new List<QuarantineEntry>();
+        foreach (var entry in entries)
+            if (RestoreOneQuarantine(entry)) restored.Add(entry);
+        BindQuarantine();
 
-        // Step 2 - whitelist the restored file via the shared flow (mutual exclusion
-        // with the blacklist + a "whitelist modified" History entry + count refresh).
-        string note;
-        if (!System.IO.File.Exists(entry.OriginalPath))
-        {
-            note = "restored, but the file was not found afterwards, so it was not whitelisted";
-            AppendLine($"Whitelist: {note}");
-        }
-        else
-        {
-            var result = await ApplySignatureAddAsync(
-                CustomSignatureManager.ListKind.Whitelist, new[] { entry.OriginalPath }, this);
+        // Step 2 - whitelist every restored file in ONE pass through the shared flow
+        // (mutual exclusion with the blacklist + one "whitelist modified" History
+        // entry + count refresh). The commit reports file NAMES, so results are
+        // matched back by name.
+        var paths = restored
+            .Where(x => System.IO.File.Exists(x.OriginalPath))
+            .Select(x => x.OriginalPath)
+            .ToArray();
+        foreach (var entry in restored.Where(x => !System.IO.File.Exists(x.OriginalPath)))
+            AppendLine($"{entry.OriginalName}: restored, but the file was not found afterwards, so it was not whitelisted.");
 
-            if (result.Added.Count > 0 || result.Moved.Count > 0)
-            {
-                note = "restored and added to the whitelist";
-                await ReloadDaemonAsync();
-            }
-            else if (result.SkippedSameList.Count > 0)
-                note = "restored; it was already on the whitelist";
-            else if (result.SkippedConflict.Count > 0)
-                note = "restored; kept on the blacklist, not whitelisted";
-            else
-            {
-                string reason = result.Failed.Count > 0 ? result.Failed[0].Error : "unknown error";
-                note = $"restored, but whitelisting failed: {reason}";
-            }
-            AppendLine($"Whitelist: {note}");
+        if (paths.Length == 0)
+        {
+            QuarantineStatus.Text = restored.Count == 0
+                ? "Nothing was restored (see console)."
+                : $"{restored.Count} restored, nothing whitelisted (see console).";
+            return;
         }
 
-        // Separate quarantine record for the restore itself (the whitelist change has
-        // its own "Signatures" History entry written by the shared flow).
-        AddHistory("Quarantine action", entry.OriginalPath, "", "Restored",
-            $"Restored from quarantine.{Environment.NewLine}" +
-            $"File: {entry.OriginalName}{Environment.NewLine}" +
-            $"To: {entry.OriginalPath}");
+        var result = await ApplySignatureAddAsync(
+            CustomSignatureManager.ListKind.Whitelist, paths, this);
 
-        QuarantineStatus.Text = $"{entry.OriginalName}: {note}";
+        var whitelistedNames = new HashSet<string>(
+            result.Added.Concat(result.Moved).Concat(result.SkippedSameList),
+            StringComparer.OrdinalIgnoreCase);
+        int whitelisted = restored.Count(x => whitelistedNames.Contains(x.OriginalName));
+
+        foreach (var name in result.SkippedConflict)
+            AppendLine($"{name}: kept on the blacklist, not whitelisted.");
+        foreach (var (path, reason) in result.Failed)
+            AppendLine($"Whitelist failed for {path}: {reason}");
+        if (result.Added.Count > 0 || result.Moved.Count > 0)
+            AppendLine(DaemonReloadNote);
+
+        QuarantineStatus.Text = $"{restored.Count} restored, {whitelisted} whitelisted (see console).";
     }
 }

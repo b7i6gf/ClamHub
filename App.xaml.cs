@@ -138,7 +138,12 @@ public partial class App : Application
         if (string.IsNullOrWhiteSpace(StartupActionPath)) return "";
         string infected = string.IsNullOrWhiteSpace(StartupInfectedAction)
             ? "" : $"--infected {StartupInfectedAction} ";
-        return $"--action {StartupActionId ?? "scan"} {infected}--path \"{StartupActionPath}\"";
+        // A drive root ends in a backslash which would escape the closing quote
+        // ("M:\" arrives as M:"); double it so the relaunched instance parses the
+        // path back correctly.
+        string path = StartupActionPath;
+        if (path.EndsWith("\\", StringComparison.Ordinal)) path += "\\";
+        return $"--action {StartupActionId ?? "scan"} {infected}--path \"{path}\"";
     }
 
     /// <summary>
@@ -254,5 +259,25 @@ public partial class App : Application
                     break;
             }
         }
+        StartupActionPath = NormalizeContextPath(StartupActionPath);
+    }
+
+    /// <summary>
+    /// Repairs a path mangled by shell command-line quoting. Explorer expands %1
+    /// for a drive to "M:\": inside the registry command --path "M:\" the trailing
+    /// backslash escapes the closing quote and the app receives M:" instead, so a
+    /// drive scan from the context menu silently did nothing (the existence check
+    /// failed). Undoes that escape and turns a bare drive letter ("M:") into its
+    /// root ("M:\"). Called from: ParseArguments.
+    /// </summary>
+    private static string? NormalizeContextPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return path;
+        var p = path.Trim();
+        if (p.EndsWith("\"", StringComparison.Ordinal))
+            p = p[..^1] + "\\";
+        if (p.Length == 2 && char.IsLetter(p[0]) && p[1] == ':')
+            p += "\\";
+        return p;
     }
 }

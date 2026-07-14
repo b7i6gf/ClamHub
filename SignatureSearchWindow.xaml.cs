@@ -141,7 +141,9 @@ public partial class SignatureSearchWindow : Window
                     picks.Add(new DbPick
                     {
                         Path = path,
-                        Label = SignatureSearch.IsTextDatabase(path) ? name : name + "  (container)",
+                        Label = SignatureSearch.IsTextDatabase(path) ? name
+                              : SignatureSearch.IsYaraDatabase(path) ? name + "  (yara)"
+                              : name + "  (container)",
                         IsSelected = true
                     });
                 }
@@ -157,14 +159,9 @@ public partial class SignatureSearchWindow : Window
             StatusText.Text = "No databases found. Run a signature update first.";
     }
 
-    /// <summary>True for files this window can search (text databases plus .cvd/.cld containers).</summary>
+    /// <summary>True for files this window can search. Moved to SignatureSearch (v1.0.3.3).</summary>
     private static bool IsSearchableDatabase(string path)
-    {
-        if (SignatureSearch.IsTextDatabase(path)) return true;
-        string ext = System.IO.Path.GetExtension(path);
-        return ext.Equals(".cvd", StringComparison.OrdinalIgnoreCase)
-            || ext.Equals(".cld", StringComparison.OrdinalIgnoreCase);
-    }
+        => SignatureSearch.IsSearchableDatabase(path);
 
     /// <summary>Checks every database. Called from: All button.</summary>
     private void SelectAll_Click(object sender, RoutedEventArgs e) => SetAllSelected(true);
@@ -465,6 +462,15 @@ public partial class SignatureSearchWindow : Window
         {
             string? raw = rawLine ?? await SignatureSearch.FindRawLineAsync(signatureName, cts.Token);
             if (cts.IsCancellationRequested) return;
+
+            // YARA hits carry the whole rule block as their raw line; sigtool cannot
+            // decode YARA rules, so the rule is shown as written (v1.0.3.5).
+            if (raw != null && signatureName.StartsWith("YARA.", StringComparison.OrdinalIgnoreCase))
+            {
+                DecodeBox.Text = raw + Environment.NewLine + Environment.NewLine
+                    + "(YARA rule shown as written; sigtool cannot decode YARA rules.)";
+                return;
+            }
 
             if (raw == null)
             {

@@ -36,7 +36,8 @@ public partial class SignaturesWindow : Window
     public SignaturesWindow(MainWindow main)
     {
         _main = main;
-        Owner = main;
+        // No Owner (v1.0.3.6): opened via ToolWindows so the main window can be
+        // brought back in front while this window stays open.
         InitializeComponent();
         RefreshLists();
     }

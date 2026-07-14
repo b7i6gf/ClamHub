@@ -102,7 +102,7 @@ public partial class MainWindow
     /// table-sort helper (toggles asc/desc, one active column, shows the arrow).
     /// Called from: the Signatures table GridViewColumnHeader.Click in MainWindow.xaml.</summary>
     private void SignaturesSort_Click(object sender, RoutedEventArgs e)
-        => SortByColumn(e.OriginalSource as GridViewColumnHeader, SignaturesDbList);
+        => ListViewSorting.SortByColumn(e.OriginalSource as GridViewColumnHeader, SignaturesDbList);
 
     /// <summary>
     /// Lists every recognised ClamAV database file in the folder as a table row: the
@@ -681,19 +681,33 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Manage lists button: opens the multi-file blacklist/whitelist window, then
-    /// refreshes the counts and, if anything changed during the session, reloads the
-    /// daemon once. Called from: XAML Click binding.
+    /// Manage lists button: opens the multi-file blacklist/whitelist window
+    /// NON-MODAL (v1.0.3.2) so the rest of the app stays usable; when it closes,
+    /// refreshes the counts and, if anything changed, prints the reload hint (no
+    /// automatic daemon reload anymore, per user request). A second click focuses
+    /// the already open window. Called from: XAML Click binding.
     /// </summary>
-    private async void ManageSignatureLists_Click(object sender, RoutedEventArgs e)
+    private void ManageSignatureLists_Click(object sender, RoutedEventArgs e)
     {
-        var window = new SignaturesWindow(this);
-        window.ShowDialog();
-
-        RebuildSignatureTable();
-        if (window.Changed)
-            await ReloadDaemonAsync();
+        if (_signaturesWindow != null)
+        {
+            _signaturesWindow.Activate();
+            return;
+        }
+        _signaturesWindow = new SignaturesWindow(this);
+        _signaturesWindow.Closed += (_, _) =>
+        {
+            bool changed = _signaturesWindow?.Changed == true;
+            _signaturesWindow = null;
+            RebuildSignatureTable();
+            if (changed)
+                SetSignaturesStatus(DaemonReloadNote);
+        };
+        ToolWindows.Show(_signaturesWindow, this);
     }
+
+    /// <summary>The open manage-lists window, or null (singleton guard). Used by: ManageSignatureLists_Click.</summary>
+    private SignaturesWindow? _signaturesWindow;
 
     /// <summary>
     /// Opens the signature-search window (search or list the signatures inside the
@@ -701,7 +715,7 @@ public partial class MainWindow
     /// Click binding (Search signatures).
     /// </summary>
     private void SearchSignatures_Click(object sender, RoutedEventArgs e)
-        => new SignatureSearchWindow { Owner = this }.ShowDialog();
+        => ToolWindows.Show(new SignatureSearchWindow(), this);
 
     /// <summary>
     /// Opens the ClamAV database folder in Explorer (creating it if missing).
@@ -787,21 +801,34 @@ public partial class MainWindow
     /// table rows but the official rows are re-read for safety). Called from: XAML
     /// Click binding (Add from URL).
     /// </summary>
-    private async void AddDatabaseUrl_Click(object sender, RoutedEventArgs e)
+    private void AddDatabaseUrl_Click(object sender, RoutedEventArgs e)
     {
-        var window = new CustomDatabaseUrlWindow { Owner = this };
-        window.ShowDialog();
-
-        // The window may have logged database History entries (URL add/remove, update).
-        BindHistory();
-
-        if (window.Changed)
+        if (_databaseUrlWindow != null)
         {
-            _sigInfoLoaded = false;
-            await RefreshDatabaseInfoAsync();
-            SetSignaturesStatus("Custom database URLs updated.");
+            _databaseUrlWindow.Activate();
+            return;
         }
+        // NON-MODAL (v1.0.3.2): the refresh moved into the Closed handler so the rest
+        // of the app stays usable while the window is open.
+        var window = new CustomDatabaseUrlWindow();
+        _databaseUrlWindow = window;
+        window.Closed += async (_, _) =>
+        {
+            _databaseUrlWindow = null;
+            // The window may have logged database History entries (URL add/remove, update).
+            BindHistory();
+            if (window.Changed)
+            {
+                _sigInfoLoaded = false;
+                await RefreshDatabaseInfoAsync();
+                SetSignaturesStatus("Custom database URLs updated.");
+            }
+        };
+        ToolWindows.Show(window, this);
     }
+
+    /// <summary>The open custom-URL manager, or null (singleton guard). Used by: AddDatabaseUrl_Click.</summary>
+    private CustomDatabaseUrlWindow? _databaseUrlWindow;
 
     // ---- Shared signature-change flow (window, context menu, quarantine) ----
 
@@ -975,8 +1002,7 @@ public partial class MainWindow
         if (result.Added.Count > 0 || result.Moved.Count > 0)
         {
             string what = result.Moved.Count > 0 ? "moved to" : "added to";
-            Inform($"{kindName} file", $"{fileName} {what} the {listName}.");
-            await ReloadDaemonAsync();
+            Inform($"{kindName} file", $"{fileName} {what} the {listName}.\n\n{DaemonReloadNote}");
         }
         else if (result.SkippedConflict.Count > 0)
         {

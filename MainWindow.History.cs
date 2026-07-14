@@ -209,13 +209,16 @@ public partial class MainWindow
             : System.IO.Directory.Exists(target) ? "Folder scan"
             : "File scan";
 
-        // Result also states what happened to any infected files.
-        string resultLabel = result.ExitCode switch
-        {
-            0 => "Clean",
-            1 => $"{result.InfectedLines.Count} infected ({ActionWord(options.Action)})",
-            _ => "Error"
-        };
+        // Result always states the infection outcome (never a bare "Error"): a scan
+        // that finished with per-file errors still tells whether infections were
+        // found; the unscannable files are listed in the summary below.
+        string resultLabel = result.InfectedLines.Count > 0
+            ? $"{result.InfectedLines.Count} infected ({ActionWord(options.Action)})"
+            : "Clean";
+        if (result.ExitCode >= 2)
+            resultLabel += result.ErrorLines.Count > 0
+                ? $", {result.ErrorLines.Count} not scanned"
+                : ", with errors";
 
         var sb = new System.Text.StringBuilder();
         sb.Append(BuildScanSettingsHeader(options));
@@ -236,6 +239,18 @@ public partial class MainWindow
             sb.AppendLine();
             sb.AppendLine($"Infected files ({result.InfectedLines.Count}):");
             foreach (var line in result.InfectedLines) sb.AppendLine(line);
+        }
+
+        // Files ClamAV could not scan (locked, access denied, ...). This is what
+        // "COMPLETED WITH ERRORS" refers to; the raw ERROR lines carry the reason.
+        if (result.ErrorLines.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"Files not scanned ({result.ErrorLines.Count}):");
+            const int errCap = 500;
+            foreach (var line in result.ErrorLines.Take(errCap)) sb.AppendLine(line);
+            if (result.ErrorLines.Count > errCap)
+                sb.AppendLine($"...and {result.ErrorLines.Count - errCap} more");
         }
 
         // For an only-extensions scan, list the files that were actually covered.
@@ -262,7 +277,9 @@ public partial class MainWindow
         {
             0 => "CLEAN",
             1 => $"{r.InfectedLines.Count} infected",
-            _ => $"errors (exit {r.ExitCode})"
+            _ => r.InfectedLines.Count > 0
+                ? $"{r.InfectedLines.Count} infected, {r.ErrorLines.Count} not scanned"
+                : $"clean, {r.ErrorLines.Count} not scanned"
         };
 
     /// <summary>
@@ -280,8 +297,8 @@ public partial class MainWindow
 
         string resultLabel =
             totalInfected > 0 ? $"{totalInfected} infected ({ActionWord(action)})"
-            : anyError ? "Completed with errors"
             : cancelled ? "Cancelled"
+            : anyError ? "Clean, with errors"
             : "Clean";
 
         // Representative options just for the settings header (target path unused there).
@@ -314,6 +331,23 @@ public partial class MainWindow
             foreach (var (_, res) in results)
                 foreach (var line in res.InfectedLines)
                     sb.AppendLine(line);
+        }
+
+        // Files ClamAV could not scan across all targets (locked, access denied, ...).
+        int totalErrors = results.Sum(r => r.Result.ErrorLines.Count);
+        if (totalErrors > 0)
+        {
+            const int errCap = 500;
+            int written = 0;
+            sb.AppendLine();
+            sb.AppendLine($"Files not scanned ({totalErrors}):");
+            foreach (var (_, res) in results)
+                foreach (var line in res.ErrorLines)
+                {
+                    if (written++ >= errCap) break;
+                    sb.AppendLine(line);
+                }
+            if (totalErrors > errCap) sb.AppendLine($"...and {totalErrors - errCap} more");
         }
 
         // For an only-extensions queue scan, list the covered files per target.
@@ -397,20 +431,21 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Deletes the selected history entry. Called from: XAML Click binding
-    /// (Delete entry button).
+    /// Deletes the selected history entries (multi-selection with Ctrl/Shift,
+    /// v1.0.3.5). Called from: XAML Click binding (Delete entry button).
     /// </summary>
     private void DeleteHistoryEntry_Click(object sender, RoutedEventArgs e)
     {
-        if (HistoryList.SelectedItem is not ScanHistoryEntry entry)
+        var entries = HistoryList.SelectedItems.Cast<ScanHistoryEntry>().ToList();
+        if (entries.Count == 0)
         {
-            SetHistoryDetail("Select a history entry to delete.");
+            SetHistoryDetail("Select one or more history entries to delete.");
             return;
         }
 
-        HistoryManager.Delete(entry);
+        int removed = HistoryManager.DeleteMany(entries);
         BindHistory();
-        SetHistoryDetail("Entry deleted.");
+        SetHistoryDetail(removed == 1 ? "Entry deleted." : $"{removed} entries deleted.");
     }
 
     /// <summary>
@@ -427,144 +462,10 @@ public partial class MainWindow
 
     /// <summary>Sorts the history table by the clicked column. Called from: XAML header Click.</summary>
     private void HistorySort_Click(object sender, RoutedEventArgs e)
-        => SortByColumn(e.OriginalSource as GridViewColumnHeader, HistoryList);
+        => ListViewSorting.SortByColumn(e.OriginalSource as GridViewColumnHeader, HistoryList);
 
     /// <summary>Sorts the quarantine table by the clicked column. Called from: XAML header Click.</summary>
     private void QuarantineSort_Click(object sender, RoutedEventArgs e)
-        => SortByColumn(e.OriginalSource as GridViewColumnHeader, QuarantineList);
+        => ListViewSorting.SortByColumn(e.OriginalSource as GridViewColumnHeader, QuarantineList);
 
-    /// <summary>
-    /// Sorts a ListView by the property in the clicked header's Tag. Repeated clicks on the
-    /// SAME column cycle through three states: ascending, then descending, then UNSORTED
-    /// (the source/default order is restored and the arrow cleared). Clicking a different
-    /// column starts ascending. Uses a CustomSort comparer (ColumnComparer) so numeric and
-    /// date columns sort by value, not lexicographically. Shared by all three tables.
-    /// Called from: HistorySort_Click, QuarantineSort_Click and SignaturesSort_Click.
-    /// </summary>
-    private static void SortByColumn(GridViewColumnHeader? header, ListView list)
-    {
-        // Ignore clicks on the padding header or the resize gripper.
-        if (header?.Column?.Header is not TextBlock tb || tb.Tag is not string prop
-            || string.IsNullOrEmpty(prop))
-            return;
-
-        // ListCollectionView is what GetDefaultView returns for a List<T> and it is the
-        // only view type that supports CustomSort.
-        if (System.Windows.Data.CollectionViewSource.GetDefaultView(list.ItemsSource)
-                is not System.Windows.Data.ListCollectionView view)
-            return;
-
-        if (view.CustomSort is ColumnComparer cur && cur.Property == prop)
-        {
-            if (!cur.Descending)
-            {
-                // 2nd click: ascending -> descending.
-                view.CustomSort = new ColumnComparer(prop, true);
-                UpdateSortArrows(list, prop, System.ComponentModel.ListSortDirection.Descending);
-            }
-            else
-            {
-                // 3rd click: descending -> unsorted. Clearing CustomSort makes the view
-                // fall back to the underlying list order (the tab's default).
-                view.CustomSort = null;
-                UpdateSortArrows(list, null, System.ComponentModel.ListSortDirection.Ascending);
-            }
-            return;
-        }
-
-        // 1st click (or a different column): ascending.
-        view.CustomSort = new ColumnComparer(prop, false);
-        UpdateSortArrows(list, prop, System.ComponentModel.ListSortDirection.Ascending);
-    }
-
-    /// <summary>
-    /// Value-aware comparer used as a ListCollectionView.CustomSort for the data tables.
-    /// Reads the named property from each row (via reflection, cached per row type since a
-    /// table holds one type) and compares smartly: DateTime chronologically; two values
-    /// that both parse as numbers by numeric value; a number before plain text; otherwise
-    /// a culture-aware case-insensitive string compare. This fixes numeric string columns
-    /// like the Signatures count sorting lexicographically. Used by: SortByColumn.
-    /// </summary>
-    private sealed class ColumnComparer : System.Collections.IComparer
-    {
-        public string Property { get; }
-        public bool Descending { get; }
-
-        private System.Reflection.PropertyInfo? _pi;
-        private Type? _piType;
-
-        public ColumnComparer(string property, bool descending)
-        {
-            Property = property;
-            Descending = descending;
-        }
-
-        /// <summary>Reflects the sort property off a row, caching the PropertyInfo for the
-        /// row type (all rows in one table share a type). Called from: Compare.</summary>
-        private object? Value(object? row)
-        {
-            if (row == null) return null;
-            var t = row.GetType();
-            if (_pi == null || _piType != t) { _piType = t; _pi = t.GetProperty(Property); }
-            return _pi?.GetValue(row);
-        }
-
-        /// <summary>Compares two rows by the sort property, applying the direction. Called from: the view.</summary>
-        public int Compare(object? x, object? y)
-        {
-            int cmp = CompareValues(Value(x), Value(y));
-            return Descending ? -cmp : cmp;
-        }
-
-        /// <summary>Type-aware value compare (DateTime, numeric, date-like strings, then
-        /// text). Called from: Compare.</summary>
-        private static int CompareValues(object? a, object? b)
-        {
-            if (a == null && b == null) return 0;
-            if (a == null) return -1;
-            if (b == null) return 1;
-            if (a is DateTime da && b is DateTime db) return DateTime.Compare(da, db);
-
-            string sa = a.ToString() ?? "";
-            string sb = b.ToString() ?? "";
-            var inv = System.Globalization.CultureInfo.InvariantCulture;
-            var style = System.Globalization.NumberStyles.Number;
-            bool na = double.TryParse(sa, style, inv, out double va);
-            bool nb = double.TryParse(sb, style, inv, out double vb);
-            if (na && nb) return va.CompareTo(vb);
-            if (na != nb) return na ? -1 : 1; // numbers sort before non-numeric text
-
-            // The Built column mixes formats ("11 Sep 2025 08:29 -0400" from sigtool vs
-            // "2026-07-10 19:01" file dates); plain text compare would order those
-            // wrongly, so date-like strings are compared chronologically. Pure numbers
-            // never reach this branch (handled above), so "339" cannot be misread.
-            bool ta = DateTime.TryParse(sa, inv, System.Globalization.DateTimeStyles.None, out var dta)
-                   || DateTime.TryParse(sa, out dta);
-            bool tb = DateTime.TryParse(sb, inv, System.Globalization.DateTimeStyles.None, out var dtb)
-                   || DateTime.TryParse(sb, out dtb);
-            if (ta && tb) return DateTime.Compare(dta, dtb);
-            if (ta != tb) return ta ? -1 : 1; // dates sort before plain text ("n/a", "-")
-
-            return string.Compare(sa, sb, StringComparison.CurrentCultureIgnoreCase);
-        }
-    }
-
-    /// <summary>
-    /// Sets an up/down arrow on the active column header and clears it from the others.
-    /// A null prop (unsorted) clears every arrow. Called from: SortByColumn.
-    /// </summary>
-    private static void UpdateSortArrows(ListView list, string? prop,
-        System.ComponentModel.ListSortDirection dir)
-    {
-        if (list.View is not GridView grid) return;
-        foreach (var col in grid.Columns)
-        {
-            if (col.Header is not TextBlock t) continue;
-            string baseTitle = t.Text.Replace(" \u25B2", "").Replace(" \u25BC", "");
-            bool active = (t.Tag as string) == prop;
-            t.Text = active
-                ? baseTitle + (dir == System.ComponentModel.ListSortDirection.Ascending ? " \u25B2" : " \u25BC")
-                : baseTitle;
-        }
-    }
 }

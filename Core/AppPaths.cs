@@ -116,6 +116,9 @@ public static class AppPaths
     public static string ProfilesFile => Path.Combine(BaseDir, "profiles.json");
     public static string QueueProfilesFile => Path.Combine(BaseDir, "queues.json");
     public static string HistoryFile => Path.Combine(LogsDir, "history.json");
+
+    /// <summary>Infected files reported by report-only scans, worked through in the Detections window.</summary>
+    public static string DetectionsFile => Path.Combine(LogsDir, "detections.json");
     public static string QuarantineIndexFile => Path.Combine(QuarantineDir, "quarantine.json");
     public static string ScanLogFile => Path.Combine(LogsDir, "clamd-scan.log");
     public static string ClamdLogFile => Path.Combine(LogsDir, "clamd.log");

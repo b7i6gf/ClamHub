@@ -1,0 +1,238 @@
+<Window x:Class="ClamHub.DetectionsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="Detections" Height="660" Width="1297"
+        MinHeight="500" MinWidth="900"
+        WindowStartupLocation="CenterOwner" WindowStyle="None" ResizeMode="CanResize"
+        Background="{StaticResource BgBrush}">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="6"
+                            CornerRadius="0" GlassFrameThickness="0"
+                            UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+
+    <Border BorderBrush="{StaticResource WindowBorderBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="36"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Title bar -->
+            <Grid Grid.Row="0" Background="{StaticResource TitleBarBrush}">
+                <TextBlock Text="Detections" FontWeight="SemiBold"
+                           VerticalAlignment="Center" Margin="14,0,0,0"/>
+                <Button HorizontalAlignment="Right" Style="{StaticResource CloseCaptionButton}"
+                        Click="Close_Click" ToolTip="Close"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Path Data="M0,0 L10,10 M0,10 L10,0" Stroke="{StaticResource TextBrush}"
+                          StrokeThickness="1"/>
+                </Button>
+            </Grid>
+
+            <!-- Content -->
+            <Grid Grid.Row="1" Margin="20,16,20,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="190"/>
+                    <ColumnDefinition Width="16"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Actions -->
+                <Grid Grid.Column="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="Actions" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                    <StackPanel Grid.Row="1">
+                        <Button x:Name="RescanButton" Content="Rescan file" Height="30" Margin="0,0,0,6"
+                                Click="Rescan_Click"
+                                ToolTip="Scan the selected file(s) again and update the entries (Clean when no longer reported)"/>
+                        <Button x:Name="QuarantineButton" Content="Quarantine" Height="30" Margin="0,0,0,6"
+                                Click="Quarantine_Click"
+                                ToolTip="Move the selected file(s) into ClamHub's quarantine (neutralized, restorable)"/>
+                        <Button x:Name="RemoveButton" Content="Remove file" Height="30" Margin="0,0,0,6"
+                                Click="Remove_Click"
+                                ToolTip="Delete the file from disk permanently"/>
+                        <Button x:Name="WhitelistButton" Content="Whitelist file" Height="30" Margin="0,0,0,6"
+                                Click="Whitelist_Click"
+                                ToolTip="Add the file to the whitelist so future scans ignore it (confirmed false positives only)"/>
+                        <Button x:Name="IgnoreButton" Content="Ignore" Height="30" Margin="0,0,0,6"
+                                Click="Ignore_Click"
+                                ToolTip="Mark the finding as ignored (the file stays untouched)"/>
+                        <Separator Margin="0,4,0,10" Background="{StaticResource WindowBorderBrush}"/>
+                        <Button x:Name="VirusTotalButton" Content="VirusTotal check" Height="30" Margin="0,0,0,6"
+                                Click="VirusTotal_Click"
+                                ToolTip="Look up the file's SHA256 on VirusTotal (hash only, the file is not uploaded)"/>
+                        <Button x:Name="CompareButton" Content="Compare signature" Height="30" Margin="0,0,0,6"
+                                Click="Compare_Click"
+                                ToolTip="Search all installed databases for this signature name (first selected entry)"/>
+                        <Button x:Name="FindDbButton" Content="Find database" Height="30" Margin="0,0,0,6"
+                                Click="FindDatabase_Click"
+                                ToolTip="Trace which database file(s) carry the signature(s) of the selected entries; container databases take a while"/>
+                        <Separator Margin="0,4,0,10" Background="{StaticResource WindowBorderBrush}"/>
+                        <Button x:Name="DeleteEntryButton" Content="Delete entry" Height="30" Margin="0,0,0,6"
+                                Click="DeleteEntry_Click"
+                                ToolTip="Remove the entry from this list (the file itself stays untouched)"/>
+                        <Button x:Name="DeleteManagedButton" Content="Delete managed entries" Height="30" Margin="0,0,0,6"
+                                Click="DeleteManaged_Click"
+                                ToolTip="Remove every entry that is no longer pending (quarantined, removed, whitelisted or ignored)"/>
+                        <Button x:Name="DeleteAllButton" Content="Delete all entries" Height="30" Margin="0,0,0,6"
+                                Click="DeleteAll_Click"
+                                ToolTip="Remove every entry from the list (the files themselves stay untouched)"/>
+                        <Button x:Name="OpenFolderButton" Content="Open folder" Height="30" Margin="0,0,0,6"
+                                Click="OpenFolder_Click"
+                                ToolTip="Open the file's folder in Explorer (careful with infected files)"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- List + console -->
+                <Grid Grid.Column="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="150"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,10"
+                               Foreground="{StaticResource MutedTextBrush}"
+                               Text="Infected files reported by scans with the Report action. Select one or more entries (Ctrl/Shift click) and use the actions on the left to work through the list; the output of each action is shown in the console below."/>
+
+                    <ListView Grid.Row="1" x:Name="DetectionList"
+                              Background="{StaticResource PanelBrush}" BorderThickness="0" Padding="0"
+                              Foreground="{StaticResource TextBrush}" SelectionMode="Extended"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              VirtualizingPanel.ScrollUnit="Pixel"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                              GridViewColumnHeader.Click="DetectionsSort_Click">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Width="180">
+                                    <GridViewColumn.Header>
+                                        <TextBlock Text="File" Tag="FileName"
+                                                   ToolTip="File name. Click to sort."/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding FilePath}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Width="240">
+                                    <GridViewColumn.Header>
+                                        <TextBlock Text="Directory" Tag="Directory"
+                                                   ToolTip="Folder the file was found in. Click to sort."/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Directory}" TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Directory}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Width="111">
+                                    <GridViewColumn.Header>
+                                        <TextBlock Text="Time" Tag="DetectedAt"
+                                                   ToolTip="When the scan reported the file. Click to sort."/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding DetectedAt, StringFormat='yyyy-MM-dd HH:mm'}"
+                                                       ToolTip="{Binding DetectedAt, StringFormat='yyyy-MM-dd HH:mm:ss'}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Width="210">
+                                    <GridViewColumn.Header>
+                                        <TextBlock Text="Signature" Tag="Signature"
+                                                   ToolTip="Threat/signature name from the scan. Click to sort."/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Signature}" TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Signature}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Width="120">
+                                    <GridViewColumn.Header>
+                                        <TextBlock Text="Database" Tag="Database"
+                                                   ToolTip="Database file(s) the signature was traced to via Find database. Click to sort."/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Database}" TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Database}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Width="93">
+                                    <GridViewColumn.Header>
+                                        <TextBlock Text="VirusTotal" Tag="VirusTotal"
+                                                   ToolTip="VirusTotal verdict; click a result to open the report. Click the header to sort."/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock>
+                                                <Hyperlink Click="VtLink_Click"
+                                                           TextDecorations="Underline">
+                                                    <Run Text="{Binding VirusTotal, Mode=OneWay}"/>
+                                                </Hyperlink>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Width="95">
+                                    <GridViewColumn.Header>
+                                        <TextBlock Text="Status" Tag="Status"
+                                                   ToolTip="What has been done with the file. Click to sort."/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Status}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+
+                    <TextBlock Grid.Row="2" Text="Console" FontWeight="SemiBold" Margin="0,12,0,6"/>
+
+                    <Border Grid.Row="3" Background="#FF17181C" CornerRadius="6" Padding="2">
+                        <RichTextBox x:Name="ConsoleBox" IsReadOnly="True" IsDocumentEnabled="True"
+                                     IsUndoEnabled="False"
+                                     TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="Grayscale"
+                                     Background="Transparent" Foreground="#FFD6D6D6" BorderThickness="0"
+                                     FontFamily="Consolas" FontSize="12" Padding="6"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Disabled">
+                            <FlowDocument PagePadding="0"/>
+                        </RichTextBox>
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <!-- Footer -->
+            <Grid Grid.Row="2" Margin="20,4,20,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" x:Name="StatusText" VerticalAlignment="Center"
+                           TextWrapping="Wrap" Margin="0,0,12,0"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           Text="Select an entry to work on it."/>
+                <Button Grid.Column="1" Content="Close" Width="110" Height="32"
+                        FontWeight="SemiBold" Click="Close_Click"/>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

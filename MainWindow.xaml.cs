@@ -16,6 +16,18 @@ namespace ClamHub;
 /// </summary>
 public partial class MainWindow : Window
 {
+
+    /// <summary>
+    /// Shared hint printed after black-/whitelisting instead of an automatic daemon
+    /// reload (removed in v1.0.3.2 per user request: reloading after every file
+    /// slowed down working through many detections). Standalone (clamscan) scans
+    /// pick the change up immediately; only the running daemon needs the reload.
+    /// Used by: DetectionsWindow, StartContextMenuSignature,
+    /// RestoreWhitelistQuarantine_Click and ManageSignatureLists_Click.
+    /// </summary>
+    internal const string DaemonReloadNote =
+        "Reload the daemon (Settings tab, \"Reload daemon\") when you are done, so the list changes affect daemon scans.";
+
     private bool _busy;
 
     // Scan-session exclusions: a temporary working copy that starts from the
@@ -152,6 +164,7 @@ public partial class MainWindow : Window
         InitializeProfiles();
         InitializeHistory();
         InitializeQuarantine();
+        DetectionManager.Load();
         // Keep the Scan-tab VirusTotal button in sync with the chosen target.
         TargetBox.TextChanged += (_, _) => RefreshVirusTotalButtons();
         RefreshVirusTotalButtons();
@@ -170,7 +183,7 @@ public partial class MainWindow : Window
         {
             AdminRestartButton.IsEnabled = false;
             AdminRestartButton.Content = "Admin mode";
-            Title = "ClamHub 1.0.3 (Administrator)";
+            Title = "ClamHub 1.0.3.6 (Administrator)";
         }
 
         var info = await UpdateManager.GetVersionInfoAsync();
@@ -1153,6 +1166,8 @@ public partial class MainWindow : Window
                 1 => "INFECTIONS FOUND",
                 _ => $"COMPLETED WITH ERRORS (exit code {result.ExitCode}, see log)"
             })}");
+            if (result.ErrorLines.Count > 0)
+                AppendLine($"Files not scanned: {result.ErrorLines.Count} (listed in the History entry)");
 
             int found = result.InfectedLines.Count;
             if (found == 0)
@@ -1171,6 +1186,18 @@ public partial class MainWindow : Window
                     _ => $"{found} infected file(s) found"
                 };
                 InfectedCountText.Foreground = (Brush)FindResource("DangerBrush");
+            }
+
+            // Report-only findings go into the Detections list so the user can work
+            // through them later (quarantine/remove actions already handle the files
+            // themselves, so those scans are not recorded here). Memory scans have
+            // no file paths to act on.
+            if (found > 0 && options.Action == InfectedFileAction.ReportOnly
+                && options.Mode == ScanEngine.ScanMode.Path)
+            {
+                int added = DetectionManager.AddFindings(result.InfectedLines);
+                if (added > 0)
+                    AppendLine($"{added} new finding(s) added to Detections (title bar).");
             }
 
             // Persist the scan into the history tab (suppressed for queued targets,
@@ -2061,7 +2088,8 @@ public partial class MainWindow : Window
     private void OpenConsoleWindow()
     {
         if (_consoleWindow != null) { _consoleWindow.Activate(); return; }
-        _consoleWindow = new ConsoleWindow { Owner = this };
+        // No Owner (v1.0.3.6), see ToolWindows: normal click-to-front z-order.
+        _consoleWindow = new ConsoleWindow();
         _consoleWindow.SetLines(_consoleLines);
         _consoleWindow.ClearRequested += () => ClearConsoleAll();
         _consoleWindow.OpenLogsRequested += () => OpenLogsFolder_Click(this, new RoutedEventArgs());
@@ -2079,7 +2107,7 @@ public partial class MainWindow : Window
                 SettingsManager.Save();
             }
         };
-        _consoleWindow.Show();
+        ToolWindows.Show(_consoleWindow, this);
     }
 
     /// <summary>Closes the separate console window if open. Called from: SetConsoleMode.</summary>
@@ -2215,6 +2243,29 @@ public partial class MainWindow : Window
         MaxRestoreButton.ToolTip = max ? "Restore" : "Maximize";
     }
 
+    /// <summary>
+    /// Opens the Detections window NON-MODAL (v1.0.3.2), so scans and the other
+    /// windows stay usable while working through the list; a second click focuses
+    /// the already open window instead of opening another one. Called from: the
+    /// "Detections" title bar button (MainWindow.xaml).
+    /// </summary>
+    private void Detections_Click(object sender, RoutedEventArgs e)
+    {
+        if (_detectionsWindow != null)
+        {
+            _detectionsWindow.Activate();
+            return;
+        }
+        // No Owner (v1.0.3.6): owned windows always float above their owner, which
+        // blocked bringing the main window in front again. ToolWindows centers it.
+        _detectionsWindow = new DetectionsWindow(this);
+        _detectionsWindow.Closed += (_, _) => _detectionsWindow = null;
+        ToolWindows.Show(_detectionsWindow, this);
+    }
+
+    /// <summary>The open Detections window, or null (singleton guard). Used by: Detections_Click.</summary>
+    private DetectionsWindow? _detectionsWindow;
+
     /// <summary>Opens the About dialog. Called from: title bar About button.</summary>
     private void About_Click(object sender, RoutedEventArgs e)
     {
@@ -2240,7 +2291,11 @@ public partial class MainWindow : Window
     private async Task ShowUpdateCheckAsync()
     {
         var asm = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        string appVersion = asm != null ? $"{asm.Major}.{asm.Minor}.{asm.Build}" : "1.0.3";
+        string appVersion = asm != null
+            ? (asm.Revision > 0
+                ? $"{asm.Major}.{asm.Minor}.{asm.Build}.{asm.Revision}"
+                : $"{asm.Major}.{asm.Minor}.{asm.Build}")
+            : "1.0.3.6";
 
         var dialog = new UpdateCheckWindow(appVersion, _versionInfo?.Engine, AppendLine) { Owner = this };
         dialog.ShowDialog();
@@ -2622,6 +2677,11 @@ public partial class MainWindow : Window
             ColumnWidthDescriptor.RemoveValueChanged(column, handler);
         _columnWidthWatchers.Clear();
         CloseConsoleWindow();
+        // The tool windows have no Owner since v1.0.3.6 and would otherwise keep the
+        // process alive (ShutdownMode OnLastWindowClose); close every remaining one.
+        foreach (var w in Application.Current.Windows.Cast<Window>()
+                     .Where(w => !ReferenceEquals(w, this)).ToList())
+            w.Close();
         SaveWindowSize();
         // Leave clamd running when the app is restarting to finish an update, so the
         // fresh instance finds it up; otherwise stop all bundled ClamAV processes.
