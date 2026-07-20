@@ -23,8 +23,17 @@
                 <TextBlock x:Name="DbListLine" FontFamily="Consolas" FontSize="12"
                            Foreground="{StaticResource MutedTextBrush}"/>
             </StackPanel>
-            <TextBlock Grid.Row="2" Margin="0,16,0,0" TextWrapping="Wrap"
-                       Text="A portable, modern desktop frontend for ClamAV."/>
+            <StackPanel Grid.Row="2" Margin="0,16,0,0">
+                <TextBlock TextWrapping="Wrap"
+                           Text="A portable, modern desktop frontend for ClamAV."/>
+                <!-- The copyright symbol is written as the XML entity &#169; so this
+                     file stays pure ASCII and cannot be mangled by an editor saving
+                     it in a non-UTF-8 codepage. -->
+                <TextBlock Margin="0,35,0,0" FontSize="11"
+                           HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           Text="Copyright &#169; 2026 b7i6gf. Licensed under GPL-3.0-or-later."/>
+            </StackPanel>
 
             <Grid Grid.Row="4" VerticalAlignment="Bottom">
                 <Grid.ColumnDefinitions>

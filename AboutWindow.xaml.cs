@@ -10,9 +10,10 @@ namespace ClamHub;
 /// <summary>
 /// Small modal About dialog. Shows the app version (read from the assembly),
 /// the ClamAV engine version and each signature database file with its version,
-/// plus a clickable link to the GitHub repository. Its "Check For Updates"
-/// button carries the same amber dot as the title-bar About button when an
-/// update is pending. Opened from the About button.
+/// plus a clickable link to the GitHub repository and a centered copyright and
+/// license line. Its "Check For Updates" button carries the same amber dot as
+/// the title-bar About button when an update is pending. Opened from the About
+/// button.
 /// </summary>
 public partial class AboutWindow : Window
 {
