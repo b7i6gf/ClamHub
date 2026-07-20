@@ -100,6 +100,18 @@ public class AppSettings
     public string VirusTotalApiKey { get; set; } = "";
 
     /// <summary>
+    /// Default folder for History "Export" (one entry to a .txt). Empty means
+    /// the app's Logs folder is offered. When AlwaysExport is off this folder is
+    /// only the starting location of the save dialog; when on, the file is
+    /// written here without a dialog.
+    /// </summary>
+    public string HistoryExportPath { get; set; } = "";
+
+    /// <summary>When true, History "Export" writes straight to
+    /// HistoryExportPath without opening the save dialog.</summary>
+    public bool HistoryAlwaysExportToPath { get; set; }
+
+    /// <summary>
     /// Folder where ClamAV is installed, when the user pointed the app at an
     /// existing install (folder picker). Empty/null means use the default
     /// BaseDir\ClamAV. Re-applied on startup via AppPaths.SetClamAvDir.
@@ -112,6 +124,14 @@ public class AppSettings
     /// elevation. Applied in App.OnStartup.
     /// </summary>
     public bool AlwaysStartAsAdmin { get; set; }
+
+    /// <summary>
+    /// When true, a silent GitHub update check (ClamHub + ClamAV) runs at startup,
+    /// prints exactly one console line with the outcome and lights the About-button
+    /// dot when an update exists. Used by MainWindow.CheckForUpdatesOnStartupAsync.
+    /// Default: false.
+    /// </summary>
+    public bool CheckUpdatesOnStartup { get; set; }
 
     /// <summary>
     /// Directories excluded from every scan. Applied to clamscan via
@@ -173,6 +193,56 @@ public class AppSettings
     /// needs an API key). Consumed by ContextMenuManager.
     /// </summary>
     public List<string> ContextMenuEnabledActions { get; set; } = new();
+
+    /// <summary>
+    /// File-Verifier tab: whether the "Hashes" check box was ticked last time.
+    /// Saved on every Inspect click, restored by InitializeFileVerifierTab.
+    /// </summary>
+    public bool FileVerifierIncludeHashes { get; set; } = true;
+
+    /// <summary>
+    /// File-Verifier tab: whether the "File system (owner, ACLs, ADS)" check box
+    /// was ticked last time. Saved on every Inspect click, restored by
+    /// InitializeFileVerifierTab.
+    /// </summary>
+    public bool FileVerifierIncludeFileSystem { get; set; } = true;
+
+    /// <summary>
+    /// File-Verifier tab: whether the "PE analysis" check box was ticked last
+    /// time. Saved on every Inspect click, restored by InitializeFileVerifierTab.
+    /// </summary>
+    public bool FileVerifierIncludePe { get; set; } = true;
+
+    /// <summary>
+    /// File-Verifier tab: whether the "Document analysis" check box was ticked
+    /// last time (Office/PDF/RTF/LNK/script/archive structure). On by default;
+    /// it only reads structure and self-skips for other file kinds.
+    /// </summary>
+    public bool FileVerifierIncludeDocument { get; set; } = true;
+
+    /// <summary>File-Verifier "Signature" checkbox: verify the Authenticode
+    /// signature (embedded or catalog) offline.</summary>
+    public bool FileVerifierIncludeSignature { get; set; } = true;
+
+    /// <summary>File-Verifier "ClamAV" checkbox: report-only single-file scan.
+    /// Off by default: it needs downloaded signatures and adds scan time.</summary>
+    public bool FileVerifierIncludeClamAv { get; set; }
+
+    /// <summary>File-Verifier "VirusTotal" checkbox: SHA256 lookup. Off by
+    /// default because the hash is sent to a third party.</summary>
+    public bool FileVerifierIncludeVirusTotal { get; set; }
+
+    /// <summary>File-Verifier "Strings/IOCs" checkbox: extract indicator
+    /// strings (URLs, IPs, registry Run keys, shell commands). Off by default;
+    /// it is a second full read of the file.</summary>
+    public bool FileVerifierIncludeStrings { get; set; }
+
+    /// <summary>
+    /// File-Verifier tab: the hash algorithm selected last time ("All", "MD5",
+    /// "SHA256", ...). Persisted like the check boxes so the tab AND the context
+    /// menu "Create Integrity Report" reuse the user's choice after a restart.
+    /// </summary>
+    public string FileVerifierHashAlgo { get; set; } = "All";
 
     /// <summary>
     /// When true, the "Scan with ClamHub" context entry becomes a submenu offering

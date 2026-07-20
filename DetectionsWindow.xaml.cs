@@ -89,7 +89,7 @@ public partial class DetectionsWindow : Window
     {
         _busy = busy;
         foreach (var b in new[] { RescanButton, QuarantineButton, RemoveButton, WhitelistButton,
-                     IgnoreButton, VirusTotalButton, CompareButton, FindDbButton, DeleteEntryButton,
+                     IgnoreButton, VerifyButton, VirusTotalButton, CompareButton, FindDbButton, DeleteEntryButton,
                      DeleteManagedButton, DeleteAllButton, OpenFolderButton })
             b.IsEnabled = !busy;
     }
@@ -191,32 +191,43 @@ public partial class DetectionsWindow : Window
     /// Moves the selected file(s) into the quarantine (neutralized copies,
     /// restorable) and marks the entries Quarantined. Called from: XAML Click binding.
     /// </summary>
-    private void Quarantine_Click(object sender, RoutedEventArgs e)
+    private async void Quarantine_Click(object sender, RoutedEventArgs e)
     {
         if (_busy) return;
         var entries = SelectedEntries();
         if (entries.Count == 0) return;
 
+        // Busy while the worker-thread moves run, so no second action interleaves
+        // at the awaits (the XOR copy of a large file can take a while).
+        SetBusy(true);
         int done = 0, failed = 0;
-        foreach (var entry in entries)
+        try
         {
-            if (!File.Exists(entry.FilePath))
+            foreach (var entry in entries)
             {
-                Log($"File not found, skipped: {entry.FilePath}");
-                failed++;
-                continue;
+                if (!File.Exists(entry.FilePath))
+                {
+                    Log($"File not found, skipped: {entry.FilePath}");
+                    failed++;
+                    continue;
+                }
+                var (ok, error) = await QuarantineManager.QuarantineAsync(entry.FilePath, entry.Signature);
+                if (ok)
+                {
+                    entry.Status = DetectionStatus.Quarantined;
+                    done++;
+                    Log($"Quarantined: {entry.FilePath}");
+                }
+                else
+                {
+                    failed++;
+                    Log($"Quarantine failed for {entry.FilePath}: {error}");
+                }
             }
-            if (QuarantineManager.Quarantine(entry.FilePath, entry.Signature, out var error))
-            {
-                entry.Status = DetectionStatus.Quarantined;
-                done++;
-                Log($"Quarantined: {entry.FilePath}");
-            }
-            else
-            {
-                failed++;
-                Log($"Quarantine failed for {entry.FilePath}: {error}");
-            }
+        }
+        finally
+        {
+            SetBusy(false);
         }
 
         DetectionManager.Save();
@@ -372,6 +383,92 @@ public partial class DetectionsWindow : Window
     /// short verdicts into the rows; details go to the console.
     /// Called from: XAML Click binding.
     /// </summary>
+    /// <summary>
+    /// "Verify file": runs the full local integrity report (hashes, file system,
+    /// PE, offline Authenticode signature) on the first selected file and streams
+    /// every section straight into THIS window's console, so the user stays in
+    /// the Detections view. One file at a time keeps the report readable; extra
+    /// selections are noted. Called from: XAML Click binding.
+    /// </summary>
+    private async void Verify_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy) return;
+        var entries = SelectedEntries();
+        if (entries.Count == 0) return;
+
+        var entry = entries[0];
+        if (!File.Exists(entry.FilePath))
+        {
+            Log($"File not found: {entry.FilePath}");
+            StatusText.Text = "File not found.";
+            return;
+        }
+        if (entries.Count > 1)
+            Log($"Verify runs on the first selected file ({entry.FileName}); the report follows below.");
+
+        SetBusy(true);
+        try
+        {
+            var options = new IntegrityScanner.IntegrityOptions(
+                IncludeHashes: true, IncludeFileSystem: true, IncludePe: true, "All", "",
+                IncludeSignature: true, IncludeStrings: true);
+
+            var report = await IntegrityScanner.RunAsync(entry.FilePath, options,
+                hashProgress: null,
+                onSection: (title, lines) =>
+                {
+                    LogSection(title);
+                    foreach (var line in lines) Log(line);
+                },
+                onStatus: Log,
+                onStage: stage => Dispatcher.InvokeAsync(() =>
+                    StatusText.Text = VerifyStageText(stage, entry.FileName)),
+                _cts.Token);
+
+            // Detections-triggered runs belong in the shared History too (same
+            // kind/labels as tab runs); this continuation is on the UI thread.
+            _owner.AddIntegrityHistoryEntry(entry.FilePath, options, report);
+
+            StatusText.Text = $"Verify finished for {entry.FileName}.";
+        }
+        catch (OperationCanceledException)
+        {
+            Log("Verify cancelled.");
+            StatusText.Text = "Verify cancelled.";
+        }
+        catch (Exception ex)
+        {
+            Log($"Verify failed: {ex.Message}");
+            StatusText.Text = "Verify failed.";
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    /// <summary>Writes a section header into the console in the same format the
+    /// main window uses (blank separator line, then a banner with a timestamp).
+    /// Called from: Verify_Click.</summary>
+    private void LogSection(string title)
+    {
+        Log("");
+        foreach (var line in ClamHub.Core.ConsoleSections.Banner(title, $"{DateTime.Now:HH:mm:ss}"))
+            Log(line);
+    }
+
+    /// <summary>Maps a verify stage id to a short status-bar label.
+    /// Called from: Verify_Click.</summary>
+    private static string VerifyStageText(string stage, string fileName) => stage switch
+    {
+        "hashes" => $"Verifying {fileName}: computing hashes...",
+        "filesystem" => $"Verifying {fileName}: reading file system metadata...",
+        "pe" => $"Verifying {fileName}: analyzing the PE structure...",
+        "signature" => $"Verifying {fileName}: checking the signature...",
+        "strings" => $"Verifying {fileName}: extracting indicator strings...",
+        _ => $"Verifying {fileName}..."
+    };
+
     private async void VirusTotal_Click(object sender, RoutedEventArgs e)
     {
         if (_busy) return;

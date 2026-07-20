@@ -39,7 +39,34 @@ public partial class App : Application
     public static string? StartupInfectedAction { get; private set; }
 
     /// <summary>
-    /// Startup hook. Called by: WPF runtime before StartupUri window is created.
+    /// True only for the process that actually claimed the single-instance
+    /// mutex, i.e. the one that owns this session's ClamAV daemon. A secondary
+    /// launch (context menu forwarding its request, or the copy that relaunches
+    /// itself elevated) exits again moments later and must therefore NOT touch
+    /// clamd: doing so killed the PRIMARY instance's running daemon on every
+    /// context menu click. Enforced in three layers (all 2026-07-19): the window
+    /// is only created on the primary path (see OnStartup, StartupUri removed),
+    /// MainWindow.Window_Closing returns early for non-primaries, and
+    /// DaemonController.KillAllOwned itself refuses to run in a non-primary.
+    /// Read by: OnExit, MainWindow.Window_Closing, DaemonController.KillAllOwned.
+    /// </summary>
+    public static bool IsPrimaryInstance { get; private set; }
+
+    /// <summary>
+    /// Set by a restart path that must NOT have the exiting process touch clamd.
+    /// The relaunched copy is started BEFORE this one shuts down, so without this
+    /// the old process could kill a daemon the NEW instance had just auto-started
+    /// (a race that left the daemon dead with nothing to restart it).
+    /// Set by: MainWindow.Restart_Click (daemon deliberately kept alive across a
+    /// plain restart) and MainWindow.RestartAsAdmin_Click (daemon already stopped
+    /// on purpose there, so the elevated copy can start its own). Read by: OnExit.
+    /// </summary>
+    public static bool LeaveDaemonRunningOnExit { get; set; }
+
+    /// <summary>
+    /// Startup hook. Creates and shows MainWindow explicitly at the end of the
+    /// primary path; secondary launches call Shutdown() before any window exists.
+    /// Called by: WPF runtime (Application.StartupCallback).
     /// </summary>
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -66,7 +93,8 @@ public partial class App : Application
 
         // If another ClamHub is already running, hand it our request (or a plain
         // activate) and exit instead of opening a second window.
-        if (!SingleInstance.ClaimPrimary())
+        bool claimedPrimary = SingleInstance.ClaimPrimary();
+        if (!claimedPrimary)
         {
             SingleInstance.SendToPrimary(
                 string.IsNullOrWhiteSpace(StartupActionPath)
@@ -75,6 +103,9 @@ public partial class App : Application
             Shutdown();
             return;
         }
+
+        // From here on this process owns the daemon lifecycle (see IsPrimaryInstance).
+        IsPrimaryInstance = true;
 
         // Re-apply a previously chosen ClamAV folder (if it still has the binaries)
         // before folders and configs are created, so they target the right place.
@@ -90,10 +121,29 @@ public partial class App : Application
         ContextMenuManager.SyncToSettings();
 
         base.OnStartup(e);
+
+        // ROOT CAUSE FIX (2026-07-19): the window is created EXPLICITLY and only
+        // here, on the primary path. StartupUri was removed from App.xaml on
+        // purpose: WPF's Application.StartupCallback ignores a Shutdown() issued
+        // inside OnStartup (it only checks e.PerformDefaultAction, which stays
+        // true) and DoStartup() then loads a pack StartupUri SYNCHRONOUSLY via
+        // LoadComponent. Every secondary context menu launch therefore
+        // constructed an invisible MainWindow; the queued shutdown closed it,
+        // its Closing handler fired and KillAllOwned (folder match) killed the
+        // PRIMARY instance's clamd. Symptoms: daemon died directly after every
+        // context action (even "Add to Queue"), and the next prefer-daemon scan
+        // had to cold-start clamd ("Waiting for clamd to load the signature
+        // database..."). Do NOT re-add StartupUri.
+        var window = new MainWindow();
+        MainWindow = window;
+        window.Show();
     }
 
-    /// <summary>True when the process already runs with administrator rights. Called from: OnStartup.</summary>
-    private static bool IsElevated()
+    /// <summary>True when the process already runs with administrator rights.
+    /// The single shared implementation (the former private copy in MainWindow was
+    /// removed in the 2026-07-18 cleanup). Called from: OnStartup, MainWindow.InitializeAsync
+    /// (admin button state) and MainWindow.RestartAsAdmin_Click.</summary>
+    internal static bool IsElevated()
     {
         using var identity = WindowsIdentity.GetCurrent();
         return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
@@ -155,11 +205,20 @@ public partial class App : Application
     /// </summary>
     protected override void OnExit(ExitEventArgs e)
     {
-        // During an update restart, deliberately leave clamd running so the fresh
-        // instance finds it already up (no gap/race with its own auto-start).
-        // Otherwise stop every bundled ClamAV process.
-        if (!SelfUpdater.RestartingForUpdate)
-            DaemonController.KillAllOwned();
+        // Stop the bundled ClamAV processes ONLY when this process is the primary
+        // instance and is not restarting for an update. Exclusions:
+        // - Secondary launches (a context menu click while ClamHub already runs,
+        //   or the pre-elevation copy) exit within milliseconds. KillAllOwned
+        //   matches clamd by FOLDER, not by parent, so such a launch used to kill
+        //   the PRIMARY instance's daemon. NOTE: this guard alone was NOT enough;
+        //   the actual kill came from the phantom StartupUri window's Closing
+        //   handler, which runs BEFORE OnExit (root cause fix in OnStartup).
+        // - During an update restart clamd is left running deliberately, so the
+        //   fresh instance finds it already up (no gap/race with its auto-start).
+        // - A restart path may hand the daemon over to the relaunched copy
+        //   (LeaveDaemonRunningOnExit), which also removes the race described there.
+        if (IsPrimaryInstance && !SelfUpdater.RestartingForUpdate && !LeaveDaemonRunningOnExit)
+            DaemonController.KillAllOwned("primary process exit");
         base.OnExit(e);
     }
 

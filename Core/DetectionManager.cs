@@ -31,6 +31,17 @@ public static class DetectionManager
     public static ObservableCollection<DetectionEntry> Entries { get; private set; } = new();
 
     /// <summary>
+    /// Raised whenever the detections list changes (add, remove, clear, reload)
+    /// so the main window can update the subtle count indicator on the
+    /// Detections button. Subscribers must marshal to the UI thread themselves.
+    /// Called from: Save and Load.
+    /// </summary>
+    public static event Action? Changed;
+
+    /// <summary>Fires the Changed event (best effort). Called from: Save, Load.</summary>
+    private static void RaiseChanged() => Changed?.Invoke();
+
+    /// <summary>
     /// Loads detections.json; an invalid or missing file yields an empty list.
     /// Called from: MainWindow.InitializeAsync.
     /// </summary>
@@ -49,6 +60,7 @@ public static class DetectionManager
         {
             Entries = new();
         }
+        RaiseChanged();
     }
 
     /// <summary>
@@ -156,5 +168,6 @@ public static class DetectionManager
         {
             AppNotifications.ReportError($"Could not save the detections list: {ex.Message}");
         }
+        RaiseChanged();
     }
 }

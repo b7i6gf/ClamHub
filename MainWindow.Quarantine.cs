@@ -42,17 +42,20 @@ public partial class MainWindow
 
     /// <summary>
     /// Moves the scan's infected files into quarantine (GUI-managed move that
-    /// keeps the original path for an exact restore). Returns how many were
-    /// moved successfully. Called from: RunScanGuarded after a Quarantine scan.
+    /// keeps the original path for an exact restore). The per-file XOR copy runs
+    /// on a worker thread (QuarantineManager.QuarantineAsync), so a multi-GB
+    /// infected file no longer freezes the UI. Returns how many were moved
+    /// successfully. Called from: RunScanGuarded after a Quarantine scan.
     /// </summary>
-    private int QuarantineInfectedFiles(IReadOnlyList<string> infectedLines)
+    private async Task<int> QuarantineInfectedFilesAsync(IReadOnlyList<string> infectedLines)
     {
         int moved = 0, failed = 0;
         foreach (var line in infectedLines)
         {
             if (!ScanEngine.TryParseFoundLine(line, out var path, out var threat))
                 continue;
-            if (QuarantineManager.Quarantine(path, threat, out var error))
+            var (ok, error) = await QuarantineManager.QuarantineAsync(path, threat);
+            if (ok)
                 moved++;
             else
             {
@@ -98,13 +101,16 @@ public partial class MainWindow
     /// <summary>
     /// Restores ONE quarantined file, asking per file before overwriting an
     /// existing target, and writes the console line + History record on success.
-    /// Returns true when the file is back at its original path. Called from:
-    /// RestoreQuarantine_Click and RestoreWhitelistQuarantine_Click (batch loops).
+    /// The XOR-reversing copy runs on a worker thread (RestoreAsync) so a large
+    /// file does not freeze the UI. Returns true when the file is back at its
+    /// original path. Called from: RestoreQuarantine_Click and
+    /// RestoreWhitelistQuarantine_Click (batch loops).
     /// </summary>
-    private bool RestoreOneQuarantine(QuarantineEntry entry)
+    private async Task<bool> RestoreOneQuarantineAsync(QuarantineEntry entry)
     {
         bool overwritten = false;
-        if (!QuarantineManager.Restore(entry, overwrite: false, out var error))
+        var (ok, error) = await QuarantineManager.RestoreAsync(entry, overwrite: false);
+        if (!ok)
         {
             // Offer overwrite when the only problem is an existing target file.
             if (error == null || !error.Contains("already exists"))
@@ -119,7 +125,8 @@ public partial class MainWindow
                 AppendLine($"{entry.OriginalName}: restore skipped (a file exists at the target).");
                 return false;
             }
-            if (!QuarantineManager.Restore(entry, overwrite: true, out var overwriteError))
+            var (okOverwrite, overwriteError) = await QuarantineManager.RestoreAsync(entry, overwrite: true);
+            if (!okOverwrite)
             {
                 AppendLine($"{entry.OriginalName}: restore failed: {overwriteError ?? "unknown error"}");
                 return false;
@@ -141,7 +148,7 @@ public partial class MainWindow
     /// confirmation; overwrite conflicts are asked per file). Called from: XAML
     /// Click binding.
     /// </summary>
-    private void RestoreQuarantine_Click(object sender, RoutedEventArgs e)
+    private async void RestoreQuarantine_Click(object sender, RoutedEventArgs e)
     {
         var entries = SelectedQuarantineEntries("Select one or more files to restore.");
         if (entries.Count == 0) return;
@@ -155,7 +162,7 @@ public partial class MainWindow
         AppendSection("QUARANTINE");
         int done = 0;
         foreach (var entry in entries)
-            if (RestoreOneQuarantine(entry)) done++;
+            if (await RestoreOneQuarantineAsync(entry)) done++;
 
         BindQuarantine();
         QuarantineStatus.Text = done == entries.Count
@@ -167,7 +174,7 @@ public partial class MainWindow
     /// Permanently deletes the selected quarantined file(s) after one combined
     /// confirmation. Called from: XAML Click binding.
     /// </summary>
-    private void DeleteQuarantine_Click(object sender, RoutedEventArgs e)
+    private async void DeleteQuarantine_Click(object sender, RoutedEventArgs e)
     {
         var entries = SelectedQuarantineEntries("Select one or more files to delete.");
         if (entries.Count == 0) return;
@@ -182,7 +189,9 @@ public partial class MainWindow
         int done = 0, failed = 0;
         foreach (var entry in entries)
         {
-            if (QuarantineManager.Delete(entry, out var error))
+            // Worker thread: deleting a huge stored file can take a moment.
+            var (ok, error) = await QuarantineManager.DeleteAsync(entry);
+            if (ok)
             {
                 done++;
                 AppendLine($"{entry.OriginalName} permanently deleted.");
@@ -223,7 +232,8 @@ public partial class MainWindow
 
         foreach (var entry in entries)
         {
-            var sha256 = QuarantineManager.ComputeOriginalSha256(entry, out var error);
+            // Worker thread: a full read pass over the stored file to hash it.
+            var (sha256, error) = await QuarantineManager.ComputeOriginalSha256Async(entry);
             if (sha256 == null)
             {
                 AppendSection("VIRUSTOTAL");
@@ -310,7 +320,7 @@ public partial class MainWindow
         AppendSection("QUARANTINE");
         var restored = new List<QuarantineEntry>();
         foreach (var entry in entries)
-            if (RestoreOneQuarantine(entry)) restored.Add(entry);
+            if (await RestoreOneQuarantineAsync(entry)) restored.Add(entry);
         BindQuarantine();
 
         // Step 2 - whitelist every restored file in ONE pass through the shared flow

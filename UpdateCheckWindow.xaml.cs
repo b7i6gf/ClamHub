@@ -8,7 +8,9 @@ namespace ClamHub;
 /// <summary>
 /// Dark dialog that shows the latest ClamHub and ClamAV GitHub releases with
 /// their release date, lets the user open the ClamHub release page, and can
-/// download and unpack ClamAV into the ClamAV folder. The ClamHub repo is
+/// download and unpack ClamAV into the ClamAV folder. Each card carries an amber
+/// dot (ClamHubDot/ClamAvDot, same style as the Detections and About dots) that
+/// is shown only for the component that really has an update. The ClamHub repo is
 /// private for now, so its lookup returns "not available" rather than failing.
 /// Created by: MainWindow.OpenUpdateCheck.
 /// </summary>
@@ -27,11 +29,18 @@ public partial class UpdateCheckWindow : Window
     private bool _clamHubIsZip;
     private bool _clamHubUpgrade;
     private GitHubReleaseClient.ReleaseAsset? _clamAvAsset;
+    private bool _clamAvUpdate;
     private CancellationTokenSource? _downloadCts;
     private bool _busy;
 
     /// <summary>True after ClamAV was downloaded and unpacked, so the owner can refresh.</summary>
     public bool ClamAvWasInstalled { get; private set; }
+
+    /// <summary>Combined result of the last completed check: true when a ClamHub
+    /// upgrade or a ClamAV update is available, false when neither is, null while
+    /// no check finished or GitHub was unreachable. MainWindow syncs the
+    /// About-button dot from this after the dialog closes.</summary>
+    public bool? UpdatesAvailable { get; private set; }
 
     /// <summary>True when clamd was running just before a ClamAV install stopped it to
     /// unlock the files, so the owner knows to restart it after the update.</summary>
@@ -69,6 +78,10 @@ public partial class UpdateCheckWindow : Window
             ClamAvInstalled.Text += " - no signature database yet";
         ClamHubLatest.Text = "Latest: checking...";
         ClamAvLatest.Text = "Latest: checking...";
+        // Clear both card dots up front so a previous result (or a Refresh after
+        // an install) never leaves a stale dot visible while the check runs.
+        ClamHubDot.Visibility = Visibility.Collapsed;
+        ClamAvDot.Visibility = Visibility.Collapsed;
 
         var clamHubTask = GitHubReleaseClient.GetLatestReleaseAsync(ClamHubOwner, ClamHubRepo);
         var clamAvTask = GitHubReleaseClient.GetLatestReleaseAsync(ClamAvOwner, ClamAvRepo);
@@ -76,6 +89,10 @@ public partial class UpdateCheckWindow : Window
 
         ApplyClamHub(clamHubTask.Result.Release, clamHubTask.Result.Reached);
         ApplyClamAv(clamAvTask.Result.Release, clamAvTask.Result.Reached);
+        // null when GitHub was unreachable, so the owner leaves the dot as-is.
+        UpdatesAvailable = clamHubTask.Result.Reached || clamAvTask.Result.Reached
+            ? _clamHubUpgrade || _clamAvUpdate
+            : null;
         SetBusy(false, "");
     }
 
@@ -89,7 +106,7 @@ public partial class UpdateCheckWindow : Window
         _clamHubUrl = null;
         _clamHubAsset = null;
         _clamHubUpgrade = false;
-        ClamHubButton.Content = "Release page";
+        ClamHubButton.Content = "Release Page";
         ClamHubButton.IsEnabled = false;
         if (!reached)
         {
@@ -112,6 +129,7 @@ public partial class UpdateCheckWindow : Window
             _clamHubAsset = asset.Value.Asset;
             _clamHubIsZip = asset.Value.IsZip;
             _clamHubUpgrade = true;
+            ClamHubDot.Visibility = Visibility.Visible;
             ClamHubLatest.Text = $"Latest: {Describe(release)} - update available: {installedVer} -> {latestVer}.";
             ClamHubButton.Content = "Upgrade";
             ClamHubButton.IsEnabled = true;
@@ -134,6 +152,7 @@ public partial class UpdateCheckWindow : Window
     private void ApplyClamAv(GitHubReleaseClient.ReleaseInfo? release, bool reached)
     {
         _clamAvAsset = null;
+        _clamAvUpdate = false;
         ClamAvButton.IsEnabled = false;
         if (!reached)
         {
@@ -182,6 +201,8 @@ public partial class UpdateCheckWindow : Window
         else if (installedVer < latestVer)
         {
             button = "Update";
+            _clamAvUpdate = true;
+            ClamAvDot.Visibility = Visibility.Visible;
             text += $"\nUpdate available: {installedVer} -> {latestVer}.";
         }
         else if (installedVer == latestVer)
@@ -203,13 +224,72 @@ public partial class UpdateCheckWindow : Window
     /// <summary>
     /// Extracts a comparable version from a string such as "ClamAV 1.5.2" or
     /// "clamav-1.5.2" (the first dotted number found), or null when there is none.
-    /// Called from: ApplyClamAv.
+    /// Called from: ApplyClamHub, ApplyClamAv and ProbeAsync.
     /// </summary>
     private static Version? ParseVersion(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
         var m = System.Text.RegularExpressions.Regex.Match(text, @"\d+(?:\.\d+)+");
         return m.Success && Version.TryParse(m.Value, out var v) ? v : null;
+    }
+
+    /// <summary>Result of the silent startup probe. Reached is false only when
+    /// BOTH GitHub lookups failed; the notes are "installed -> latest" strings
+    /// for the console line.</summary>
+    public readonly record struct UpdateProbe(
+        bool Reached,
+        bool ClamHubUpdate, string? ClamHubNote,
+        bool ClamAvUpdate, string? ClamAvNote);
+
+    /// <summary>
+    /// Silent version probe for the startup update check: queries both
+    /// repositories and applies the SAME update semantics as the dialog cards.
+    /// ClamHub counts as an update when a newer release ships a Windows asset;
+    /// ClamAV counts only in the dialog's "Update" situation (engine installed in
+    /// ClamHub's own folder, a Windows x64 zip exists and the installed version is
+    /// older). "Not installed", custom-folder and reinstall situations do NOT
+    /// count. Touches no UI and throws for no network reason.
+    /// Called from: MainWindow.CheckForUpdatesOnStartupAsync.
+    /// </summary>
+    public static async Task<UpdateProbe> ProbeAsync(string clamHubVersion, string? clamAvEngine)
+    {
+        var clamHubTask = GitHubReleaseClient.GetLatestReleaseAsync(ClamHubOwner, ClamHubRepo);
+        var clamAvTask = GitHubReleaseClient.GetLatestReleaseAsync(ClamAvOwner, ClamAvRepo);
+        await Task.WhenAll(clamHubTask, clamAvTask);
+        var hub = clamHubTask.Result;
+        var av = clamAvTask.Result;
+        bool reached = hub.Reached || av.Reached;
+
+        bool hubUpdate = false;
+        string? hubNote = null;
+        if (hub.Reached && hub.Release != null)
+        {
+            var installedVer = ParseVersion(clamHubVersion);
+            var latestVer = ParseVersion(hub.Release.Tag) ?? ParseVersion(hub.Release.Name);
+            var asset = GitHubReleaseClient.FindClamHubWindowsAsset(hub.Release.Assets);
+            if (asset != null && installedVer != null && latestVer != null && latestVer > installedVer)
+            {
+                hubUpdate = true;
+                hubNote = $"{installedVer} -> {latestVer}";
+            }
+        }
+
+        bool avUpdate = false;
+        string? avNote = null;
+        if (av.Reached && av.Release != null
+            && !string.IsNullOrWhiteSpace(clamAvEngine) && !AppPaths.ClamAvDirIsCustom
+            && GitHubReleaseClient.FindWindowsX64Zip(av.Release.Assets) != null)
+        {
+            var installedVer = ParseVersion(clamAvEngine);
+            var latestVer = ParseVersion(av.Release.Tag) ?? ParseVersion(av.Release.Name);
+            if (installedVer != null && latestVer != null && installedVer < latestVer)
+            {
+                avUpdate = true;
+                avNote = $"{installedVer} -> {latestVer}";
+            }
+        }
+
+        return new UpdateProbe(reached, hubUpdate, hubNote, avUpdate, avNote);
     }
 
     /// <summary>Formats "tag (released yyyy-MM-dd)". Called from: ApplyClamHub/ApplyClamAv.</summary>
@@ -379,7 +459,7 @@ public partial class UpdateCheckWindow : Window
         // Remember if the daemon was up before we stop it to unlock clamd.exe, so the
         // owner can bring it back after the update.
         DaemonWasRunningBeforeInstall = await DaemonController.IsRunningAsync();
-        DaemonController.KillAllOwned(); // release any lock on clamd.exe before overwriting
+        DaemonController.KillAllOwned("ClamAV update: releasing the lock on clamd.exe");
 
         // Anchor the install in the main console so the SHA256 integrity result is
         // visible there (the status label only shows the latest line transiently).
@@ -423,6 +503,12 @@ public partial class UpdateCheckWindow : Window
                 catch { /* the owner re-validates configs after this dialog closes */ }
             }
             ClamAvWasInstalled = true;
+            // The pending update was just installed: clear the card dot and the
+            // state the owner reads for its own dots (the dialog closes without
+            // re-checking, so nothing else would reset them).
+            _clamAvUpdate = false;
+            UpdatesAvailable = _clamHubUpgrade;
+            ClamAvDot.Visibility = Visibility.Collapsed;
             ClamAvButton.IsEnabled = false;
             StatusText.Text = "ClamAV installed.";
             await Task.Delay(700); // brief confirmation, then close automatically

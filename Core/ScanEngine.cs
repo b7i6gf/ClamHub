@@ -51,8 +51,13 @@ public static class ScanEngine
         List<string> ErrorLines,
         string? Error);
 
+    // 1 while a scan runs, 0 when idle. Claimed atomically via Interlocked so two
+    // near-simultaneous callers (UI thread + a worker, e.g. the File-Verifier's
+    // ClamAV stage) can never both pass a check-then-set gap and start two scans.
+    private static int _scanInProgress;
+
     /// <summary>True while a scan is running, prevents overlapping scans.</summary>
-    public static bool ScanInProgress { get; private set; }
+    public static bool ScanInProgress => Volatile.Read(ref _scanInProgress) == 1;
 
     /// <summary>
     /// Runs a scan with the given options and streams live output.
@@ -64,10 +69,7 @@ public static class ScanEngine
         Action<string> onOutput,
         CancellationToken cancel = default)
     {
-        if (ScanInProgress)
-            return new ScanResult(false, -1, false, new(), new(), "A scan is already running.");
-
-        // Validate the target before launching anything.
+        // Validate the target before claiming the scan slot or launching anything.
         if (options.Mode == ScanMode.Path)
         {
             if (string.IsNullOrWhiteSpace(options.TargetPath))
@@ -78,7 +80,9 @@ public static class ScanEngine
             options = options with { TargetPath = clean };
         }
 
-        ScanInProgress = true;
+        // Atomic claim: only one caller can flip 0 -> 1; everyone else bounces.
+        if (Interlocked.CompareExchange(ref _scanInProgress, 1, 0) != 0)
+            return new ScanResult(false, -1, false, new(), new(), "A scan is already running.");
         // Hoisted so the cancellation path can report which scanner actually ran
         // (clamdscan vs clamscan) instead of defaulting to false.
         bool useDaemon = false;
@@ -164,7 +168,7 @@ public static class ScanEngine
         }
         finally
         {
-            ScanInProgress = false;
+            Volatile.Write(ref _scanInProgress, 0);
         }
     }
 
@@ -205,9 +209,12 @@ public static class ScanEngine
         sb.Append("--recursive ");
         sb.Append($"--log=\"{AppPaths.ScanLogFile}\" ");
 
+        // Case-insensitive like the exclude filters (ExtensionRegex adds (?i)), so
+        // "file.EXE" matches an "exe" include on Windows. Extensions are already
+        // sanitized to alphanumerics by ParseExtensions.
         if (o.IncludeExtensions is { Count: > 0 })
             foreach (var ext in o.IncludeExtensions)
-                sb.Append($"--include=\\.{ext}$ ");
+                sb.Append($"--include=\"{ExtensionRegex(ext)}\" ");
 
         // Per-scan exclusions for clamscan, applied ONLY for "Scan w/o daemon"
         // (Standalone). Any other scan ignores them. They come from the scan-session
@@ -253,7 +260,7 @@ public static class ScanEngine
     /// Appends the infected file action flags. Note: Quarantine is intentionally
     /// NOT passed to ClamAV here. ClamAV's --move loses the original path and
     /// renames on collision, so the GUI quarantines files itself after the scan
-    /// (see MainWindow.QuarantineInfectedFiles) to keep an exact restore path.
+    /// (see MainWindow.QuarantineInfectedFilesAsync) to keep an exact restore path.
     /// Only Remove maps to a ClamAV flag.
     /// Called from: BuildClamdScanArgs and BuildClamScanArgs.
     /// </summary>
@@ -266,7 +273,7 @@ public static class ScanEngine
     /// <summary>
     /// Parses a ClamAV "FOUND" line into the file path and the threat name.
     /// Line format: "&lt;path&gt;: &lt;signature&gt; FOUND". Returns false when the
-    /// line does not match. Called from: MainWindow.QuarantineInfectedFiles.
+    /// line does not match. Called from: MainWindow.QuarantineInfectedFilesAsync.
     /// </summary>
     public static bool TryParseFoundLine(string line, out string path, out string threat)
     {

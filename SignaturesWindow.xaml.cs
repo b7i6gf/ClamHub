@@ -39,6 +39,13 @@ public partial class SignaturesWindow : Window
         // No Owner (v1.0.3.6): opened via ToolWindows so the main window can be
         // brought back in front while this window stays open.
         InitializeComponent();
+
+        // Admin mode: restore drag and drop (UIPI blocks OLE drops); no-op otherwise.
+        Loaded += (_, _) => ElevatedDropSupport.Enable(this,
+            new ElevatedDropSupport.Target(BlacklistBox,
+                async files => await HandleDroppedPathsAsync(CustomSignatureManager.ListKind.Blacklist, files)),
+            new ElevatedDropSupport.Target(WhitelistBox,
+                async files => await HandleDroppedPathsAsync(CustomSignatureManager.ListKind.Whitelist, files)));
         RefreshLists();
     }
 
@@ -120,8 +127,17 @@ public partial class SignaturesWindow : Window
     {
         e.Handled = true;
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+        await HandleDroppedPathsAsync(kind, (string[])e.Data.GetData(DataFormats.FileDrop));
+    }
 
-        var files = ((string[])e.Data.GetData(DataFormats.FileDrop)).Where(File.Exists).ToArray();
+    /// <summary>
+    /// Path-based core of the drop handling (files only, folders ignored), shared
+    /// by the WPF drop events and the elevated WM_DROPFILES hook. Called from:
+    /// HandleDropAsync and ElevatedDropSupport.
+    /// </summary>
+    private async Task HandleDroppedPathsAsync(CustomSignatureManager.ListKind kind, string[] paths)
+    {
+        var files = paths.Where(File.Exists).ToArray();
         if (files.Length == 0)
         {
             StatusText.Text = "Nothing added: drop individual files (folders are ignored).";

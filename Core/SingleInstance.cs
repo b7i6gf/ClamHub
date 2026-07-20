@@ -59,12 +59,27 @@ public static class SingleInstance
 
     /// <summary>
     /// True if this process is the first instance (and now owns the mutex).
-    /// Keep the returned state for the process lifetime. Called from: App.OnStartup.
+    /// Keep the returned state for the process lifetime. Never throws: if the
+    /// mutex exists but cannot be opened by THIS process (typically a ClamHub
+    /// running at a different elevation level, where opening the handle is
+    /// access denied), some instance is running either way, so the launch is
+    /// treated as secondary. Before this hardening the exception escaped into
+    /// the global handler, the launch continued neither as primary nor as
+    /// secondary and ended as a stray process (2026-07-19).
+    /// Called from: App.OnStartup.
     /// </summary>
     public static bool ClaimPrimary()
     {
-        _mutex = new Mutex(true, MutexName, out bool createdNew);
-        return createdNew;
+        try
+        {
+            _mutex = new Mutex(true, MutexName, out bool createdNew);
+            return createdNew;
+        }
+        catch
+        {
+            _mutex = null;
+            return false;
+        }
     }
 
     /// <summary>

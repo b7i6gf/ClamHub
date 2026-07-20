@@ -78,10 +78,13 @@ public partial class MainWindow
         SetCountFiles.IsChecked = s.CountFilesOnDaemonScan;
         SetMultiScan.IsChecked = s.MultiScan;
         SetAlwaysAdmin.IsChecked = s.AlwaysStartAsAdmin;
+        SetCheckUpdates.IsChecked = s.CheckUpdatesOnStartup;
         SetDefaultAction.SelectedIndex = (int)s.DefaultAction;
         // Show a mask instead of the stored key, both on load and after saving.
         SetVtKey.Text = string.IsNullOrEmpty(s.VirusTotalApiKey) ? "" : VtKeyMask;
+        SetHistoryAlwaysExport.IsChecked = s.HistoryAlwaysExportToPath;
         UpdateClamAvPathDisplay();
+        UpdateHistoryExportPathDisplay();
 
         InitializeContextMenuUi();
         RefreshContextMenuState();
@@ -99,6 +102,8 @@ public partial class MainWindow
         SetCountFiles.Click += (_, _) => AutoSaveGuiSettings();
         SetMultiScan.Click += (_, _) => AutoSaveGuiSettings();
         SetAlwaysAdmin.Click += (_, _) => AutoSaveGuiSettings();
+        SetCheckUpdates.Click += (_, _) => AutoSaveGuiSettings();
+        SetHistoryAlwaysExport.Click += (_, _) => AutoSaveGuiSettings();
         SetDefaultAction.SelectionChanged += (_, _) => AutoSaveGuiSettings();
         SetVtKey.LostFocus += (_, _) => SaveVtKeyOnBlur();
         SetVtKey.KeyDown += (_, e) =>
@@ -462,6 +467,8 @@ public partial class MainWindow
             s.CountFilesOnDaemonScan = SetCountFiles.IsChecked == true;
             s.MultiScan = SetMultiScan.IsChecked == true;
             s.AlwaysStartAsAdmin = SetAlwaysAdmin.IsChecked == true;
+            s.CheckUpdatesOnStartup = SetCheckUpdates.IsChecked == true;
+            s.HistoryAlwaysExportToPath = SetHistoryAlwaysExport.IsChecked == true;
             s.DefaultAction = (InfectedFileAction)SetDefaultAction.SelectedIndex;
 
             // Only overwrite the stored key when the user actually typed a new

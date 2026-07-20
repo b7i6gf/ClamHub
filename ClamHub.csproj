@@ -8,11 +8,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>ClamHub</AssemblyName>
     <RootNamespace>ClamHub</RootNamespace>
-    <Version>1.0.3.6</Version>
+    <Version>1.0.4</Version>
     <!-- Embeds ClamHub.ico as the EXE icon (taskbar, Explorer, window). -->
     <ApplicationIcon>ClamHub.ico</ApplicationIcon>
     <!-- Publish flags (single file, self contained) are passed via publish.cmd
          so that normal debug builds stay fast. -->
   </PropertyGroup>
+
+  <!-- NOTE: SignedCms/Rfc3161TimestampToken (AuthenticodeInspector.ReadSigningTime)
+       come from System.Security.Cryptography.Pkcs, which net10.0-windows ships
+       IN-BOX. A PackageReference to it triggers NU1510 (prunable package) and
+       must NOT be added. -->
 
 </Project>

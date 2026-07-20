@@ -8,7 +8,7 @@ namespace ClamHub.Core;
 /// certutil like the old CHECKSUM batch section. The "all hashes" path reads the
 /// file only once and feeds every block to all hashers, and the CPU work runs off
 /// the UI thread, so even large files stay responsive.
-/// Called from: MainWindow hash tab handlers.
+/// Called from: the MainWindow File-Verifier tab handlers and Core.IntegrityScanner.
 /// </summary>
 public static class HashTool
 {
@@ -64,7 +64,8 @@ public static class HashTool
     /// Computes a single hash and returns it as an uppercase hex string, or null
     /// when the file cannot be read or the algorithm is unsupported on this system.
     /// Reports 0..1 progress via progress and can be cancelled via cancel.
-    /// Called from: MainWindow ComputeHashAsync and RunVirusTotalLookup.
+    /// Called from: MainWindow.RunVirusTotalLookup, DetectionsWindow (VT lookup),
+    /// CustomSignatureManager and VerifyFileDigestAsync.
     /// </summary>
     public static async Task<string?> ComputeAsync(string filePath, string algorithm,
         IProgress<double>? progress = null, CancellationToken cancel = default)
@@ -86,11 +87,14 @@ public static class HashTool
     /// Reads the file ONCE on a background thread and feeds every block to all
     /// given hashers (TransformBlock), finalizing them at the end. Reports 0..1
     /// progress (throttled) from the file size and honors cancellation between
-    /// blocks. Shared by the single- and all-hash paths. On success each hasher's
-    /// Hash is populated. Called from: ComputeAsync and ComputeAllAsync.
+    /// blocks. When byteCounts (a long[256]) is supplied, every byte is also
+    /// tallied so the caller can derive the Shannon entropy from the SAME read
+    /// pass (used by the File-Verifier; no extra I/O). Shared by the single- and
+    /// all-hash paths. On success each hasher's Hash is populated.
+    /// Called from: ComputeAsync, ComputeAllAsync and ComputeSelectedAsync.
     /// </summary>
     private static Task RunHashersAsync(string filePath, IReadOnlyList<HashAlgorithm> hashers,
-        IProgress<double>? progress, CancellationToken cancel)
+        IProgress<double>? progress, CancellationToken cancel, long[]? byteCounts = null)
         => Task.Run(() =>
         {
             long total = 0;
@@ -107,6 +111,9 @@ public static class HashTool
                 cancel.ThrowIfCancellationRequested();
                 for (int i = 0; i < hashers.Count; i++)
                     hashers[i].TransformBlock(buffer, 0, read, null, 0);
+                if (byteCounts != null)
+                    for (int i = 0; i < read; i++)
+                        byteCounts[buffer[i]]++;
 
                 done += read;
                 var now = DateTime.UtcNow;
@@ -128,7 +135,8 @@ public static class HashTool
     /// progress and honors cancellation. A read failure, and any SHA-3 variant
     /// unsupported on this Windows build, map to null. A cancelled token aborts with
     /// OperationCanceledException.
-    /// Called from: MainWindow ComputeHashAsync when "All" is selected.
+    /// Kept as a public utility; the File-Verifier uses ComputeSelectedAsync
+    /// (same single-pass engine, plus entropy). Currently no in-app caller.
     /// </summary>
     public static async Task<Dictionary<string, string?>> ComputeAllAsync(string filePath,
         IProgress<double>? progress = null, CancellationToken cancel = default)
@@ -162,6 +170,78 @@ public static class HashTool
 
         // Return in the canonical Algorithms order (the UI relies on it).
         return Algorithms.ToDictionary(a => a, a => results.GetValueOrDefault(a));
+    }
+
+    /// <summary>
+    /// Result of ComputeSelectedAsync: hashes in canonical order (null value =
+    /// unreadable file or unsupported algorithm) plus the whole-file Shannon
+    /// entropy in bits per byte, measured in the SAME read pass (null when the
+    /// file could not be read or entropy was not requested).
+    /// </summary>
+    public record HashComputation(Dictionary<string, string?> Hashes, double? EntropyBitsPerByte);
+
+    /// <summary>
+    /// File-Verifier hash stage: computes either ALL supported hashes or one
+    /// named algorithm, optionally tallying byte frequencies in the same single
+    /// read pass to derive the file's Shannon entropy. Read failures yield null
+    /// hashes and null entropy; a cancelled token aborts with
+    /// OperationCanceledException. Called from: IntegrityScanner.RunAsync.
+    /// </summary>
+    public static async Task<HashComputation> ComputeSelectedAsync(string filePath,
+        string algorithm, bool withEntropy,
+        IProgress<double>? progress = null, CancellationToken cancel = default)
+    {
+        var names = algorithm == "All" ? Algorithms : new[] { algorithm };
+
+        var results = new Dictionary<string, string?>();
+        var hashers = new List<HashAlgorithm>();
+        var active = new List<string>();
+        foreach (var name in names)
+        {
+            if (IsSupported(name)) { hashers.Add(CreateHasher(name)); active.Add(name); }
+            else results[name] = null;
+        }
+
+        var counts = withEntropy ? new long[256] : null;
+        double? entropy = null;
+        try
+        {
+            await RunHashersAsync(filePath, hashers, progress, cancel, counts);
+            for (int i = 0; i < hashers.Count; i++)
+                results[active[i]] = Convert.ToHexString(hashers[i].Hash!);
+            if (counts != null) entropy = ShannonEntropy(counts);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            foreach (var name in names) results.TryAdd(name, null);
+        }
+        finally
+        {
+            foreach (var h in hashers) h.Dispose();
+        }
+
+        // Canonical order (the UI and the report rely on it).
+        var ordered = names.ToDictionary(a => a, a => results.GetValueOrDefault(a));
+        return new HashComputation(ordered, entropy);
+    }
+
+    /// <summary>
+    /// Shannon entropy in bits per byte (0..8) from a byte frequency table.
+    /// Returns 0 for empty input. Called from: ComputeSelectedAsync and
+    /// PeAnalyzer (per-section entropy).
+    /// </summary>
+    internal static double ShannonEntropy(long[] counts)
+    {
+        long total = counts.Sum();
+        if (total <= 0) return 0;
+        double entropy = 0;
+        foreach (long c in counts)
+        {
+            if (c == 0) continue;
+            double p = (double)c / total;
+            entropy -= p * Math.Log2(p);
+        }
+        return entropy;
     }
 
     /// <summary>
@@ -202,7 +282,7 @@ public static class HashTool
     /// <summary>
     /// Compares a computed hash with a user supplied expected value, ignoring
     /// case, spaces and surrounding quotes.
-    /// Called from: MainWindow ComputeHashAsync when an expected hash is given.
+    /// Called from: IntegrityScanner (expected-hash comparison of the File-Verifier).
     /// </summary>
     public static bool Matches(string computed, string expected)
     {

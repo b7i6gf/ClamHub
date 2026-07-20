@@ -26,6 +26,10 @@ public partial class ScanQueueWindow : Window
     public ScanQueueWindow(IEnumerable<string>? initial = null)
     {
         InitializeComponent();
+
+        // Admin mode: restore drag and drop (UIPI blocks OLE drops); no-op otherwise.
+        Loaded += (_, _) => ElevatedDropSupport.Enable(this,
+            new ElevatedDropSupport.Target(TargetList, HandleDroppedPaths));
         if (initial != null)
             foreach (var p in initial) AddTarget(p);
         QueueProfileManager.Load();
@@ -106,7 +110,17 @@ public partial class ScanQueueWindow : Window
     private void TargetList_Drop(object sender, DragEventArgs e)
     {
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
-        foreach (var p in (string[])e.Data.GetData(DataFormats.FileDrop)) AddTarget(p);
+        HandleDroppedPaths((string[])e.Data.GetData(DataFormats.FileDrop));
+    }
+
+    /// <summary>
+    /// Path-based core of the drop handling, shared by the WPF Drop event and the
+    /// elevated WM_DROPFILES hook. Called from: TargetList_Drop and
+    /// ElevatedDropSupport.
+    /// </summary>
+    private void HandleDroppedPaths(string[] paths)
+    {
+        foreach (var p in paths) AddTarget(p);
     }
 
     /// <summary>Combo entry shown when no saved queue is selected.</summary>

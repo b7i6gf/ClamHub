@@ -30,7 +30,7 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="ClamHub Output" FontWeight="SemiBold"
                            VerticalAlignment="Center" Margin="14,0,0,0"/>
-                <Button Grid.Column="1" Content="Open logs folder"
+                <Button Grid.Column="1" Content="Open Logs Folder"
                         Style="{StaticResource TitleBarTextButton}"
                         Click="OpenLogs_Click"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True"/>

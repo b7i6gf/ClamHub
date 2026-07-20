@@ -72,6 +72,10 @@ public static class ContextMenuManager
             "Compute the file's hashes in ClamHub (single files only).",
             ContextScope.File, 30),
 
+        new("integrity", "Create Integrity Report",
+            "Run every File-Verifier check on the file (hashes, file system, PE, documents, digital signature, strings); the ClamAV and VirusTotal scans run only when enabled in the File-Verifier tab.",
+            ContextScope.File, 34),
+
         new("vt", "VirusTotal Report",
             "Look up the file's SHA256 on VirusTotal from ClamHub.",
             ContextScope.File, 40, RequiresVirusTotalKey: true),

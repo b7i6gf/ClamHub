@@ -72,11 +72,11 @@
                 </Border>
 
                 <WrapPanel Grid.Row="3" Margin="0,8,0,0">
-                    <Button Content="Remove selected" Height="28" Margin="0,0,8,0" Click="RemoveSelected_Click"/>
+                    <Button Content="Remove Selected" Height="28" Margin="0,0,8,0" Click="RemoveSelected_Click"/>
                     <Button Content="Save" Height="28" Width="90" Margin="0,0,8,0"
                             FontWeight="SemiBold" Click="Save_Click"
                             ToolTip="Write the URL list to freshclam.conf"/>
-                    <Button x:Name="UpdateNowButton" Content="Update now" Height="28" Width="110"
+                    <Button x:Name="UpdateNowButton" Content="Update Now" Height="28" Width="110"
                             Click="UpdateNow_Click"
                             ToolTip="Save, then run freshclam to fetch the databases and reload the daemon"/>
                 </WrapPanel>

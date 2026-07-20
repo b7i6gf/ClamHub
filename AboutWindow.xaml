@@ -50,10 +50,17 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
-                    <Button Content="Check for updates" Width="135" Height="30" Margin="0,0,8,0"
+                    <Button Width="152" Height="30" Margin="0,0,8,0"
                             Click="CheckUpdates_Click"
-                            ToolTip="Check GitHub for the latest ClamHub and ClamAV releases"/>
-                    <Button Content="Update signatures" Width="135" Height="30" Margin="0,0,8,0"
+                            ToolTip="Check GitHub for the latest ClamHub and ClamAV releases; the dot means an update is available">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Check For Updates" VerticalAlignment="Center"/>
+                            <Ellipse x:Name="CheckUpdatesDot" Width="7" Height="7" Margin="7,1,0,0"
+                                     VerticalAlignment="Center" Fill="{StaticResource WarnBrush}"
+                                     Visibility="Collapsed"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Content="Update Signatures" Width="135" Height="30" Margin="0,0,8,0"
                             Click="UpdateSignatures_Click"
                             ToolTip="Run freshclam to update the signature databases"/>
                     <Button Content="Close" Width="70" Height="30" Click="Close_Click"/>

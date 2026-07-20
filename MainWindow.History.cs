@@ -390,6 +390,164 @@ public partial class MainWindow
             entry.Summary.Replace("\r\n", "\n").Split('\n'));
     }
 
+    /// <summary>
+    /// History "Export" button: writes the selected entry to a UTF-8 .txt file
+    /// named "{Kind}_{Time}.txt". When "Always export to this path" is on the
+    /// file is written to the configured folder without prompting; otherwise a
+    /// save dialog opens in that folder and the user may choose any location.
+    /// The result path is reported in the detail console. Called from: XAML.
+    /// </summary>
+    private void ExportHistoryEntry_Click(object sender, RoutedEventArgs e)
+    {
+        if (HistoryList.SelectedItem is not ScanHistoryEntry entry)
+        {
+            SetHistoryDetail("Select a history entry to export.");
+            return;
+        }
+
+        string fileName = BuildExportFileName(entry);
+        string folder = ResolveHistoryExportFolder();
+        string content = BuildExportContent(entry);
+
+        string targetPath;
+        if (SettingsManager.Current.HistoryAlwaysExportToPath)
+        {
+            // No prompt: straight to the configured folder.
+            targetPath = System.IO.Path.Combine(folder, fileName);
+        }
+        else
+        {
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "Export history entry",
+                FileName = fileName,
+                DefaultExt = ".txt",
+                Filter = "Text file (*.txt)|*.txt",
+                AddExtension = true,
+                OverwritePrompt = true
+            };
+            if (System.IO.Directory.Exists(folder)) dialog.InitialDirectory = folder;
+            if (dialog.ShowDialog() != true) return; // user cancelled
+            targetPath = dialog.FileName;
+        }
+
+        try
+        {
+            var dir = System.IO.Path.GetDirectoryName(targetPath);
+            if (!string.IsNullOrEmpty(dir)) System.IO.Directory.CreateDirectory(dir);
+            System.IO.File.WriteAllText(targetPath, content, new System.Text.UTF8Encoding(false));
+            SetHistoryDetail($"Entry successfully saved to {targetPath}");
+        }
+        catch (Exception ex)
+        {
+            SetHistoryDetail($"Export failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>Builds the export file name. For entries whose target is a file
+    /// the file name is prepended: "{Filename}_{Kind}_{Time}.txt"; otherwise
+    /// "{Kind}_{Time}.txt". Time uses the entry timestamp (yyyy-MM-dd_HH-mm-ss);
+    /// characters illegal in file names and spaces become '_'.
+    /// Called from: ExportHistoryEntry_Click.</summary>
+    private static string BuildExportFileName(ScanHistoryEntry entry)
+    {
+        string kind = string.IsNullOrWhiteSpace(entry.Kind) ? "Entry" : entry.Kind;
+        string time = entry.Timestamp.ToString("yyyy-MM-dd_HH-mm-ss");
+
+        // Prepend the file name when the target is a file (exists as one, or has a
+        // file extension so folder targets like C:\Downloads stay unprefixed).
+        string prefix = "";
+        string target = entry.Target ?? "";
+        if (target.Length > 0)
+        {
+            try
+            {
+                bool looksLikeFile = System.IO.File.Exists(target)
+                    || System.IO.Path.GetExtension(target).Length > 0;
+                string name = System.IO.Path.GetFileName(target.TrimEnd('\\', '/'));
+                if (looksLikeFile && name.Length > 0) prefix = name + "_";
+            }
+            catch { /* invalid path chars in target: skip the prefix */ }
+        }
+
+        string raw = $"{prefix}{kind}_{time}.txt";
+        foreach (char c in System.IO.Path.GetInvalidFileNameChars())
+            raw = raw.Replace(c, '_');
+        raw = raw.Replace(' ', '_');
+        return raw;
+    }
+
+    /// <summary>The full text written to the export file: a small header plus the
+    /// stored summary. Called from: ExportHistoryEntry_Click.</summary>
+    private static string BuildExportContent(ScanHistoryEntry entry)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"Time    : {entry.Timestamp:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"Kind    : {entry.Kind}");
+        sb.AppendLine($"Target  : {entry.Target}");
+        if (!string.IsNullOrWhiteSpace(entry.Process)) sb.AppendLine($"Process : {entry.Process}");
+        if (!string.IsNullOrWhiteSpace(entry.ResultLabel)) sb.AppendLine($"Result  : {entry.ResultLabel}");
+        sb.AppendLine(new string('=', 60));
+        sb.AppendLine();
+        sb.Append(string.IsNullOrEmpty(entry.Summary)
+            ? "(no details stored for this entry)"
+            : entry.Summary.Replace("\r\n", "\n").Replace("\n", Environment.NewLine));
+        return sb.ToString();
+    }
+
+    /// <summary>Returns the configured export folder, falling back to the Logs
+    /// folder when unset or missing. Called from: ExportHistoryEntry_Click.</summary>
+    private static string ResolveHistoryExportFolder()
+    {
+        string configured = SettingsManager.Current.HistoryExportPath;
+        if (!string.IsNullOrWhiteSpace(configured) && System.IO.Directory.Exists(configured))
+            return configured;
+        try { AppPaths.EnsureDirectories(); } catch { }
+        return AppPaths.ExportsDir;
+    }
+
+    /// <summary>Shows the resolved export folder in Settings. Called from:
+    /// InitializeSettingsTab and ChangeHistoryExportFolder_Click.</summary>
+    private void UpdateHistoryExportPathDisplay()
+    {
+        if (HistoryExportPathText != null)
+            HistoryExportPathText.Text = ResolveHistoryExportFolder();
+    }
+
+    /// <summary>Settings "Change export folder" button: folder picker, saves the
+    /// choice to settings.json. Called from: Settings XAML Click binding.</summary>
+    private void ChangeHistoryExportFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Select the default folder for History exports"
+        };
+        string current = ResolveHistoryExportFolder();
+        if (System.IO.Directory.Exists(current)) picker.InitialDirectory = current;
+        if (picker.ShowDialog() != true) return;
+
+        SettingsManager.Current.HistoryExportPath = picker.FolderName;
+        SettingsManager.Save();
+        UpdateHistoryExportPathDisplay();
+    }
+
+    /// <summary>"Open Exports": opens the export folder in Explorer, creating
+    /// it if needed. Called from: History XAML Click binding.</summary>
+    private void OpenExportsFolder_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string folder = ResolveHistoryExportFolder();
+            System.IO.Directory.CreateDirectory(folder);
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo { FileName = folder, UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            SetHistoryDetail($"Could not open the export folder: {ex.Message}");
+        }
+    }
+
     /// <summary>Reloads the history from disk. Called from: XAML Click binding.</summary>
     private void RefreshHistory_Click(object sender, RoutedEventArgs e)
     {

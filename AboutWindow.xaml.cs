@@ -10,17 +10,24 @@ namespace ClamHub;
 /// <summary>
 /// Small modal About dialog. Shows the app version (read from the assembly),
 /// the ClamAV engine version and each signature database file with its version,
-/// plus a clickable link to the GitHub repository. Opened from the About button.
+/// plus a clickable link to the GitHub repository. Its "Check For Updates"
+/// button carries the same amber dot as the title-bar About button when an
+/// update is pending. Opened from the About button.
 /// </summary>
 public partial class AboutWindow : Window
 {
     /// <summary>
     /// Creates the About dialog from the collected version info (or null when
-    /// the ClamAV binaries were not found). Called from: MainWindow.About_Click.
+    /// the ClamAV binaries were not found). updateAvailable lights the dot on the
+    /// "Check For Updates" button; the owner passes the state of its last update
+    /// check, so an unknown state (never checked / GitHub unreachable) shows no
+    /// dot. Called from: MainWindow.About_Click.
     /// </summary>
-    public AboutWindow(UpdateManager.VersionInfo? info)
+    public AboutWindow(UpdateManager.VersionInfo? info, bool updateAvailable)
     {
         InitializeComponent();
+
+        if (updateAvailable) CheckUpdatesDot.Visibility = Visibility.Visible;
 
         // App version comes from the assembly so it stays in sync with the csproj.
         var asm = Assembly.GetExecutingAssembly().GetName().Version;
@@ -28,7 +35,7 @@ public partial class AboutWindow : Window
             ? (asm.Revision > 0
                 ? $"{asm.Major}.{asm.Minor}.{asm.Build}.{asm.Revision}"
                 : $"{asm.Major}.{asm.Minor}.{asm.Build}")
-            : "1.0.3.6";
+            : "1.0.4";
 
         HeaderVersionLine.Text = $"App Version {appVersion}     |     {info?.Engine ?? "ClamAV not found"}";
 

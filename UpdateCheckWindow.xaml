@@ -51,12 +51,18 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="ClamHub" FontWeight="SemiBold" FontSize="15"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="ClamHub" FontWeight="SemiBold" FontSize="15"/>
+                                <Ellipse x:Name="ClamHubDot" Width="7" Height="7" Margin="8,2,0,0"
+                                         VerticalAlignment="Center" Fill="{StaticResource WarnBrush}"
+                                         Visibility="Collapsed"
+                                         ToolTip="An update is available"/>
+                            </StackPanel>
                             <TextBlock x:Name="ClamHubInstalled" Foreground="{StaticResource MutedTextBrush}"
                                        Margin="0,4,0,0"/>
                             <TextBlock x:Name="ClamHubLatest" Margin="0,2,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
-                        <Button Grid.Column="1" x:Name="ClamHubButton" Content="Release page"
+                        <Button Grid.Column="1" x:Name="ClamHubButton" Content="Release Page"
                                 VerticalAlignment="Center" Height="30" Padding="14,0" Margin="12,0,0,0"
                                 Click="ClamHubRelease_Click" IsEnabled="False"
                                 ToolTipService.ShowOnDisabled="True"/>
@@ -71,12 +77,18 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="ClamAV engine" FontWeight="SemiBold" FontSize="15"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="ClamAV engine" FontWeight="SemiBold" FontSize="15"/>
+                                <Ellipse x:Name="ClamAvDot" Width="7" Height="7" Margin="8,2,0,0"
+                                         VerticalAlignment="Center" Fill="{StaticResource WarnBrush}"
+                                         Visibility="Collapsed"
+                                         ToolTip="An update is available"/>
+                            </StackPanel>
                             <TextBlock x:Name="ClamAvInstalled" Foreground="{StaticResource MutedTextBrush}"
                                        Margin="0,4,0,0"/>
                             <TextBlock x:Name="ClamAvLatest" Margin="0,2,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
-                        <Button Grid.Column="1" x:Name="ClamAvButton" Content="Download &amp; set up"
+                        <Button Grid.Column="1" x:Name="ClamAvButton" Content="Download &amp; Set Up"
                                 VerticalAlignment="Center" Height="30" Padding="14,0" Margin="12,0,0,0"
                                 Click="ClamAvInstall_Click" IsEnabled="False"
                                 ToolTipService.ShowOnDisabled="True"/>

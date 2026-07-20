@@ -33,7 +33,7 @@
             </Grid>
 
             <!-- Three columns: directories, files and extensions -->
-            <Grid Grid.Row="1" Margin="20,16,20,8" AllowDrop="True"
+            <Grid x:Name="ContentGrid" Grid.Row="1" Margin="20,16,20,8" AllowDrop="True"
                   PreviewDragOver="Content_DragOver" Drop="Content_Drop">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -72,12 +72,12 @@
                         </ListBox>
                     </Border>
                     <StackPanel Grid.Row="2" Margin="0,8,0,0">
-                        <Button Content="Add folder..." Height="28" HorizontalAlignment="Left"
+                        <Button Content="Add Folder..." Height="28" HorizontalAlignment="Left"
                                 Click="AddFolder_Click"/>
                         <WrapPanel Margin="0,6,0,0">
-                            <Button Content="Remove selected" Height="28" Margin="0,0,6,6"
+                            <Button Content="Remove Selected" Height="28" Margin="0,0,6,6"
                                     Click="RemoveDir_Click"/>
-                            <Button Content="Remove all" Height="28" Margin="0,0,0,6"
+                            <Button Content="Remove All" Height="28" Margin="0,0,0,6"
                                     Click="RemoveAllDir_Click"/>
                         </WrapPanel>
                     </StackPanel>
@@ -105,12 +105,12 @@
                         </ListBox>
                     </Border>
                     <StackPanel Grid.Row="2" Margin="0,8,0,0">
-                        <Button Content="Add file..." Height="28" HorizontalAlignment="Left"
+                        <Button Content="Add File..." Height="28" HorizontalAlignment="Left"
                                 Click="AddFile_Click"/>
                         <WrapPanel Margin="0,6,0,0">
-                            <Button Content="Remove selected" Height="28" Margin="0,0,6,6"
+                            <Button Content="Remove Selected" Height="28" Margin="0,0,6,6"
                                     Click="RemoveFile_Click"/>
-                            <Button Content="Remove all" Height="28" Margin="0,0,0,6"
+                            <Button Content="Remove All" Height="28" Margin="0,0,0,6"
                                     Click="RemoveAllFile_Click"/>
                         </WrapPanel>
                     </StackPanel>
@@ -161,9 +161,9 @@
                                     Margin="6,0,0,0" Click="AddExt_Click"/>
                         </Grid>
                         <WrapPanel Margin="0,6,0,0">
-                            <Button Content="Remove selected" Height="28" Margin="0,0,6,6"
+                            <Button Content="Remove Selected" Height="28" Margin="0,0,6,6"
                                     Click="RemoveExt_Click"/>
-                            <Button Content="Remove all" Height="28" Margin="0,0,0,6"
+                            <Button Content="Remove All" Height="28" Margin="0,0,0,6"
                                     Click="RemoveAllExt_Click"/>
                         </WrapPanel>
                     </StackPanel>

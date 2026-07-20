@@ -12,7 +12,9 @@ namespace ClamHub;
 /// Main window. Stage 3: scan panel (file/folder/drive, action selection,
 /// extension filter, memory scan, cancel) on top of the stage 2 daemon and
 /// update controls. Infected file reporting follows in stage 4.
-/// Created by: WPF runtime via StartupUri in App.xaml.
+/// Created by: App.OnStartup, explicitly and on the primary instance only
+/// (StartupUri was removed 2026-07-19; a StartupUri window is materialized by
+/// WPF even after Shutdown(), which let secondary launches kill the daemon).
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -51,6 +53,12 @@ public partial class MainWindow : Window
 
     /// <summary>Latest ClamAV/database version info, shown in the title and the About box.</summary>
     private UpdateManager.VersionInfo? _versionInfo;
+
+    /// <summary>Result of the last completed update check (startup check or the
+    /// update dialog): true when a ClamHub or ClamAV update is pending. Stays
+    /// false while nothing was checked. Set by UpdateAvailableIndicators, read by
+    /// About_Click to light the dot on the dialog's "Check For Updates" button.</summary>
+    private bool _updatesAvailable;
 
     public MainWindow()
     {
@@ -164,7 +172,11 @@ public partial class MainWindow : Window
         InitializeProfiles();
         InitializeHistory();
         InitializeQuarantine();
+        InitializeFileVerifierTab();
         DetectionManager.Load();
+        // Subtle count indicator on the Detections button, kept in sync with the list.
+        DetectionManager.Changed += () => Dispatcher.Invoke(UpdateDetectionsIndicator);
+        UpdateDetectionsIndicator();
         // Keep the Scan-tab VirusTotal button in sync with the chosen target.
         TargetBox.TextChanged += (_, _) => RefreshVirusTotalButtons();
         RefreshVirusTotalButtons();
@@ -179,12 +191,23 @@ public partial class MainWindow : Window
         // arrive before initialization finishes are queued and drained at the end.
         SingleInstance.StartServer(msg => Dispatcher.Invoke(() => OnForwardedRequest(msg)));
 
-        if (IsElevated())
+        if (App.IsElevated())
         {
             AdminRestartButton.IsEnabled = false;
-            AdminRestartButton.Content = "Admin mode";
-            Title = "ClamHub 1.0.3.6 (Administrator)";
+            AdminRestartButton.Content = "Admin Mode";
+            Title = "ClamHub 1.0.4 (Administrator)";
+            // Custom-chrome title bar: the version badge doubles as the elevation
+            // indicator ("1.0.4 - Admin"), since the OS title bar is not shown.
+            TitleVersionText.Text += " - Admin";
         }
+
+        // Restores drag and drop in admin mode (UIPI blocks OLE drops from the
+        // non-elevated Explorer); no-op otherwise. Routes by drop position to the
+        // same path-based logic the WPF drop handlers use; only the visible tab's
+        // box can match.
+        ElevatedDropSupport.Enable(this,
+            new ElevatedDropSupport.Target(TargetBox, HandleTargetBoxDrop),
+            new ElevatedDropSupport.Target(HashFileBox, HandleVerifierBoxDrop));
 
         var info = await UpdateManager.GetVersionInfoAsync();
         _versionInfo = info;
@@ -230,6 +253,77 @@ public partial class MainWindow : Window
         // Queue / Exclude is never delayed by it) and in the background, independent
         // of "Prefer daemon for scans".
         _ = StartDaemonOnStartupAsync();
+
+        // Silent GitHub update check ("Search for updates on startup", off by
+        // default): one console line + the About-button dot. Fire-and-forget.
+        _ = CheckForUpdatesOnStartupAsync();
+    }
+
+    /// <summary>
+    /// Running assembly version as a display string ("1.0.4", or 4 parts when a
+    /// revision exists). Called from: ShowUpdateCheckAsync and
+    /// CheckForUpdatesOnStartupAsync.
+    /// </summary>
+    private static string GetAppVersionString()
+    {
+        var asm = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        return asm != null
+            ? (asm.Revision > 0
+                ? $"{asm.Major}.{asm.Minor}.{asm.Build}.{asm.Revision}"
+                : $"{asm.Major}.{asm.Minor}.{asm.Build}")
+            : "1.0.4";
+    }
+
+    /// <summary>
+    /// Shows/hides the amber dot on the title-bar About button (same style as the
+    /// Detections dot) and remembers the state for the About dialog, whose "Check
+    /// For Updates" button carries the same dot. true = a ClamHub or ClamAV update
+    /// is available, false = none, null (unknown / GitHub unreachable) changes
+    /// nothing. The dots inside the update dialog are its own (ClamHubDot,
+    /// ClamAvDot).
+    /// Called from: CheckForUpdatesOnStartupAsync and ShowUpdateCheckAsync.
+    /// </summary>
+    private void UpdateAvailableIndicators(bool? updatesAvailable)
+    {
+        if (!updatesAvailable.HasValue) return;
+        _updatesAvailable = updatesAvailable.Value;
+        if (AboutDot != null)
+            AboutDot.Visibility = _updatesAvailable ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Background GitHub update check on launch (setting "Search for updates on
+    /// startup", off by default). Uses UpdateCheckWindow.ProbeAsync so the
+    /// semantics can never drift from the Check For Updates dialog, prints exactly
+    /// ONE console line with the outcome and drives the update dots. Any
+    /// failure stays silent; the dialog remains the interactive path.
+    /// Called from: the end of InitializeAsync (fire-and-forget).
+    /// </summary>
+    private async Task CheckForUpdatesOnStartupAsync()
+    {
+        try
+        {
+            if (!SettingsManager.Current.CheckUpdatesOnStartup) return;
+            var probe = await UpdateCheckWindow.ProbeAsync(GetAppVersionString(), _versionInfo?.Engine);
+            if (!probe.Reached)
+            {
+                AppendLine("Update check: could not reach GitHub.");
+                return;
+            }
+            if (probe.ClamHubUpdate && probe.ClamAvUpdate)
+                AppendLine($"Update check: updates available - ClamHub {probe.ClamHubNote}, ClamAV {probe.ClamAvNote}.");
+            else if (probe.ClamHubUpdate)
+                AppendLine($"Update check: ClamHub update available ({probe.ClamHubNote}).");
+            else if (probe.ClamAvUpdate)
+                AppendLine($"Update check: ClamAV update available ({probe.ClamAvNote}).");
+            else
+                AppendLine("Update check: ClamHub and ClamAV are up to date.");
+            UpdateAvailableIndicators(probe.ClamHubUpdate || probe.ClamAvUpdate);
+        }
+        catch
+        {
+            // A failed background check must not crash or spam the app.
+        }
     }
 
     /// <summary>
@@ -320,6 +414,7 @@ public partial class MainWindow : Window
                 case "scan": QueueContextScan(path, ParseInfectedAction(infected)); break;
                 case "queue": StartContextMenuAddToQueue(path); break;
                 case "hash": await StartContextMenuHash(path); break;
+                case "integrity": await StartContextMenuIntegrity(path); break;
                 case "vt": await StartContextMenuVirusTotal(path); break;
                 case "blacklist": await StartContextMenuSignature(path, CustomSignatureManager.ListKind.Blacklist); break;
                 case "whitelist": await StartContextMenuSignature(path, CustomSignatureManager.ListKind.Whitelist); break;
@@ -506,34 +601,14 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Context menu "Compute Hash": switches to the Hash-Verifier tab and computes
-    /// all hashes of the file (only single files can be hashed).
-    /// Called from: DispatchContextAction.
-    /// </summary>
-    private async Task StartContextMenuHash(string path)
-    {
-        MainTabs.SelectedIndex = 1; // Hash-Verifier tab
-        if (!System.IO.File.Exists(path))
-        {
-            AppendSection("HASH");
-            AppendLine($"Hash: not a file (folders cannot be hashed): {path}");
-            return;
-        }
-        HashFileBox.Text = path;
-        ExpectedHashBox.Clear();
-        SelectHashAlgo("All");
-        await ComputeHashAsync(path, "All", "");
-    }
-
-    /// <summary>
-    /// Context menu "VT Report": switches to the Hash-Verifier tab and looks the
+    /// Context menu "VT Report": switches to the File-Verifier tab and looks the
     /// file up on VirusTotal (hash only). Requires an API key and a single file;
     /// RunVirusTotalLookup re-checks the key itself.
     /// Called from: DispatchContextAction.
     /// </summary>
     private async Task StartContextMenuVirusTotal(string path)
     {
-        MainTabs.SelectedIndex = 1; // Hash-Verifier tab
+        MainTabs.SelectedIndex = 1; // File-Verifier tab
         if (!System.IO.File.Exists(path))
         {
             AppendSection("VIRUSTOTAL");
@@ -542,22 +617,6 @@ public partial class MainWindow : Window
         }
         HashFileBox.Text = path;
         await RunVirusTotalLookup(path, path);
-    }
-
-    /// <summary>
-    /// Selects the given algorithm in the hash combo by its item content, so the
-    /// UI reflects a hash started from the context menu.
-    /// Called from: StartContextMenuHash.
-    /// </summary>
-    private void SelectHashAlgo(string algo)
-    {
-        foreach (var item in HashAlgoCombo.Items)
-            if (item is System.Windows.Controls.ComboBoxItem ci
-                && string.Equals(ci.Content?.ToString(), algo, StringComparison.OrdinalIgnoreCase))
-            {
-                HashAlgoCombo.SelectedItem = item;
-                return;
-            }
     }
 
     /// <summary>
@@ -695,6 +754,7 @@ public partial class MainWindow : Window
         StartDaemonButton.IsEnabled = StopDaemonButton.IsEnabled = false;
         UpdateButton.IsEnabled = ScanButton.IsEnabled = MemoryScanButton.IsEnabled = false;
         SignaturesUpdateButton.IsEnabled = false; // same freshclam run, second entry point
+        DaemonUpdateButton.IsEnabled = false;     // daemon-row entry point, same run
         ScanVirusTotalButton.IsEnabled = false;
         try
         {
@@ -712,6 +772,7 @@ public partial class MainWindow : Window
             SetOutputViewSwitchingEnabled(true);
             UpdateButton.IsEnabled = ScanButton.IsEnabled = MemoryScanButton.IsEnabled = true;
             SignaturesUpdateButton.IsEnabled = true;
+            DaemonUpdateButton.IsEnabled = true;
             RefreshVirusTotalButtons();
             await RefreshDaemonStatusAsync();
         }
@@ -831,35 +892,29 @@ public partial class MainWindow : Window
         => ScanBrowsePopup.IsOpen = true;
 
     /// <summary>
-    /// Scan "Choose files...": picks one or more files; a single file fills the
-    /// Target box, several are added to the queue. Called from: the browse popup.
+    /// Scan "Choose files...": picks one or more files and routes them through
+    /// the same rule as a drop (HandleTargetBoxDrop), so an active queue or an
+    /// occupied box sends the selection to the queue instead of the box.
+    /// Called from: the browse popup.
     /// </summary>
     private void ScanChooseFiles_Click(object sender, RoutedEventArgs e)
     {
         ScanBrowsePopup.IsOpen = false;
         var dialog = new OpenFileDialog { Title = "Select file(s) to scan", Multiselect = true };
         if (dialog.ShowDialog() != true) return;
-
-        if (dialog.FileNames.Length == 1)
-            TargetBox.Text = dialog.FileNames[0];
-        else if (dialog.FileNames.Length > 1)
-            AddPathsToQueue(dialog.FileNames);
+        HandleTargetBoxDrop(dialog.FileNames);
     }
 
     /// <summary>
-    /// Scan "Choose folder...": picks a folder or drive into the Target box.
-    /// Called from: the browse popup.
+    /// Scan "Choose folder...": picks one or more folders/drives, routed through
+    /// the same rule as a drop (HandleTargetBoxDrop). Called from: the browse popup.
     /// </summary>
     private void ScanChooseFolder_Click(object sender, RoutedEventArgs e)
     {
         ScanBrowsePopup.IsOpen = false;
         var dialog = new OpenFolderDialog { Title = "Select folder(s) or drive to scan", Multiselect = true };
         if (dialog.ShowDialog() != true) return;
-
-        if (dialog.FolderNames.Length == 1)
-            TargetBox.Text = dialog.FolderNames[0];
-        else if (dialog.FolderNames.Length > 1)
-            AddPathsToQueue(dialog.FolderNames);
+        HandleTargetBoxDrop(dialog.FolderNames);
     }
 
     /// <summary>
@@ -867,7 +922,7 @@ public partial class MainWindow : Window
     /// queued file and folder in turn in the main console.
     /// Called from: XAML Click binding (Queue button).
     /// </summary>
-    /// <summary>The integrated scan queue (session-persistent). Built via the Target [+] button / Enter
+    /// <summary>The integrated scan queue (session-persistent). Built via Enter
     /// and the queue window; scanned by the global Start scan when not empty.</summary>
     private readonly List<string> _queue = new();
 
@@ -884,6 +939,9 @@ public partial class MainWindow : Window
     /// </summary>
     private async void ScanQueue_Click(object sender, RoutedEventArgs e)
     {
+        // A valid Target-box path moves into the queue first, so it shows up in
+        // the window, is editable there and is never lost to a queue-only run.
+        AddTargetToQueue();
         var window = new ScanQueueWindow(_queue) { Owner = this };
         window.ShowDialog();
 
@@ -902,8 +960,8 @@ public partial class MainWindow : Window
     /// <summary>
     /// Adds the path currently in the Target box to the queue (skipping a missing
     /// or duplicate path), then clears the box so the next can be entered. On a
-    /// missing path the box is left as-is as feedback. Called from: the Target [+]
-    /// button and pressing Enter in the Target box.
+    /// missing path the box is left as-is as feedback. Called from: pressing Enter
+    /// in the Target box and the RunUiScan safety net.
     /// </summary>
     private void AddTargetToQueue()
     {
@@ -918,8 +976,28 @@ public partial class MainWindow : Window
         UpdateQueueIndicator();
     }
 
-    /// <summary>Target [+] button. Called from: XAML Click binding.</summary>
-    private void AddToQueue_Click(object sender, RoutedEventArgs e) => AddTargetToQueue();
+    /// <summary>
+    /// Arrow button next to Queue: sends the Target box path plus every scan
+    /// queue entry to the File-Verifier queue. AddFilesToVerifierQueue does the
+    /// filtering (folders, drives and missing paths are skipped with console
+    /// feedback), deduplicates and switches to the File-Verifier tab. The scan
+    /// queue and the Target box are COPIED, not cleared, so the scan side stays
+    /// usable as before. Called from: XAML Click binding.
+    /// </summary>
+    private void SendScanTargetsToVerifier_Click(object sender, RoutedEventArgs e)
+    {
+        var candidates = new List<string>();
+        var boxPath = TargetBox.Text.Replace("\"", "").Trim().TrimEnd('\\');
+        if (boxPath.Length > 0) candidates.Add(boxPath);
+        candidates.AddRange(_queue);
+        if (candidates.Count == 0)
+        {
+            AppendSection("VERIFIER QUEUE");
+            AppendLine("Nothing to send: Target box and scan queue are empty.");
+            return;
+        }
+        AddFilesToVerifierQueue(candidates);
+    }
 
     /// <summary>Enter in the Target box adds it to the queue. Called from: XAML KeyDown binding.</summary>
     private void TargetBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -972,6 +1050,12 @@ public partial class MainWindow : Window
     private async Task RunUiScan(ScanEngine.DaemonUsage daemonMode)
     {
         bool hadProfile = ActiveProfileName != null;
+
+        // Safety net: with a non-empty queue, a valid path still sitting in the
+        // Target box joins the queue now (the queue run would otherwise silently
+        // skip it). An invalid path stays visible in the box as feedback.
+        if (_queue.Count > 0)
+            AddTargetToQueue();
 
         if (_queue.Count > 0)
         {
@@ -1209,7 +1293,7 @@ public partial class MainWindow : Window
             // GUI moves files itself to preserve their original paths.
             if (options.Action == InfectedFileAction.Quarantine && found > 0)
             {
-                int moved = QuarantineInfectedFiles(result.InfectedLines);
+                int moved = await QuarantineInfectedFilesAsync(result.InfectedLines);
                 if (moved > 0)
                     InfectedCountText.Text = moved == found
                         ? $"{moved} infected file(s) quarantined"
@@ -1289,8 +1373,6 @@ public partial class MainWindow : Window
         string activeTip = "Look up the file's SHA256 on VirusTotal. Only the hash is sent, never the file.";
         string missingTip = "A VirusTotal API key is required. Add one in Settings.";
 
-        VirusTotalButton.IsEnabled = hasKey;
-        VirusTotalButton.ToolTip = hasKey ? activeTip : missingTip;
         QuarantineVtButton.IsEnabled = hasKey;
         QuarantineVtButton.ToolTip = hasKey ? activeTip : missingTip;
 
@@ -1394,163 +1476,71 @@ public partial class MainWindow : Window
             return;
         e.Handled = true;
 
-        // Hash tab: files only. Pick the first dropped file, ignore folders.
         if (ReferenceEquals(sender, HashFileBox))
-        {
-            var file = paths.FirstOrDefault(p => System.IO.File.Exists(p));
-            if (file != null) HashFileBox.Text = file;
-            return;
-        }
-
-        // Scan target: one item fills the box, several go to the queue.
-        if (paths.Length == 1)
-            TargetBox.Text = paths[0];
+            HandleVerifierBoxDrop(paths);
         else
-            AddPathsToQueue(paths);
-    }
-
-    /// <summary>File picker for the hash tool. Called from: XAML Click binding.</summary>
-    private void BrowseHashFile_Click(object sender, RoutedEventArgs e)
-    {
-        var dialog = new OpenFileDialog { Title = "Select file to hash" };
-        if (dialog.ShowDialog() == true)
-            HashFileBox.Text = dialog.FileName;
+            HandleTargetBoxDrop(paths);
     }
 
     /// <summary>
-    /// Reads the file, algorithm and expected value from the Hash tab and computes
-    /// the hash. Called from: XAML Click binding of the Compute button.
+    /// Path-based drop logic for the Scan Target box. Rule (same in both tabs):
+    /// the box is only used for a SINGLE item when nothing else is pending, i.e.
+    /// the queue is empty AND the box holds no valid path. In every other case
+    /// (queue already active, box already occupied, or several items dropped)
+    /// everything goes to the queue, with the box content transferred first via
+    /// AddTargetToQueue. That way a dropped file can never be silently skipped
+    /// by a queue run or overwrite what is already in the box.
+    /// Called from: PathBox_PreviewDrop and the elevated WM_DROPFILES hook
+    /// (ElevatedDropSupport).
     /// </summary>
-    private async void ComputeHash_Click(object sender, RoutedEventArgs e)
+    private void HandleTargetBoxDrop(string[] paths)
+    {
+        if (paths.Length == 1 && _queue.Count == 0 && !TargetBoxHasValidPath())
+        {
+            TargetBox.Text = paths[0];
+            return;
+        }
+        AddTargetToQueue();
+        AddPathsToQueue(paths);
+    }
+
+    /// <summary>True when the Target box holds a path that actually exists (a
+    /// typo stays overwritable by a single drop). Called from: HandleTargetBoxDrop.</summary>
+    private bool TargetBoxHasValidPath()
+    {
+        var path = TargetBox.Text.Replace("\"", "").Trim().TrimEnd('\\');
+        return path.Length > 0
+               && (System.IO.File.Exists(path) || System.IO.Directory.Exists(path));
+    }
+
+    /// <summary>
+    /// Path-based drop logic for the File-Verifier box, mirroring
+    /// HandleTargetBoxDrop: files only (folders cannot be verified), and the box
+    /// is used only for a SINGLE file when the verifier queue is empty AND the
+    /// box holds no valid file. Otherwise everything goes to the queue with the
+    /// box content transferred first. Called from: PathBox_PreviewDrop,
+    /// BrowseHashFile_Click (multi-select) and the elevated WM_DROPFILES hook.
+    /// </summary>
+    private void HandleVerifierBoxDrop(string[] paths)
+    {
+        var files = paths.Where(p => System.IO.File.Exists(p)).ToArray();
+        if (files.Length == 0) return;
+        if (files.Length == 1 && _verifierQueue.Count == 0 && !VerifierBoxHasValidFile())
+        {
+            HashFileBox.Text = files[0];
+            return;
+        }
+        TransferVerifierBoxToQueue();
+        AddFilesToVerifierQueue(files);
+    }
+
+    /// <summary>True when the File-Verifier box holds an existing FILE.
+    /// Called from: HandleVerifierBoxDrop.</summary>
+    private bool VerifierBoxHasValidFile()
     {
         var path = HashFileBox.Text.Replace("\"", "").Trim();
-        string algo = ((System.Windows.Controls.ComboBoxItem)HashAlgoCombo.SelectedItem)
-            .Content.ToString()!;
-        await ComputeHashAsync(path, algo, ExpectedHashBox.Text);
+        return path.Length > 0 && System.IO.File.Exists(path);
     }
-
-    /// <summary>
-    /// Computes one hash (or all) for a file and, when an expected value is given,
-    /// compares them; results go to the console and a history entry is recorded.
-    /// Shared so the "Compute Hash" context menu entry produces identical output.
-    /// Called from: ComputeHash_Click and StartContextMenuHash.
-    /// </summary>
-    private async Task ComputeHashAsync(string path, string algo, string expected)
-    {
-        if (!System.IO.File.Exists(path))
-        {
-            AppendLine($"Hash: file not found: {path}");
-            return;
-        }
-
-        ComputeHashButton.IsEnabled = false;
-        // Progress bar + Cancel button are shown only for the duration of the hash,
-        // so large files give feedback and can be aborted. Progress marshals to the
-        // UI thread via Progress<T>.
-        _hashCts = new CancellationTokenSource();
-        var progress = new Progress<double>(f =>
-        {
-            HashProgress.IsIndeterminate = false;
-            HashProgress.Value = f;
-        });
-        HashProgress.Value = 0;
-        HashProgress.Visibility = Visibility.Visible;
-        CancelHashButton.IsEnabled = true;
-        try
-        {
-            var token = _hashCts.Token;
-            bool hasExpected = !string.IsNullOrWhiteSpace(expected);
-            AppendSection($"HASH  {path}");
-
-            var summary = new System.Text.StringBuilder();
-            summary.AppendLine($"File: {path}");
-            bool matched = false;
-
-            // Distinguish a genuine read failure from a SHA-3 variant that this
-            // Windows build cannot run (SHA-3 needs a recent Windows).
-            static string FailMsg(string a) => HashTool.IsSupported(a)
-                ? "FAILED (file locked or unreadable)"
-                : "not supported on this Windows build";
-
-            if (algo == "All")
-            {
-                var all = await HashTool.ComputeAllAsync(path, progress, token);
-                foreach (var (name, hash) in all)
-                {
-                    string line = $"{name,-8}: {hash ?? FailMsg(name)}";
-                    AppendLine(line);
-                    summary.AppendLine(line);
-                }
-
-                // Compare the expected hash against every algorithm and name the match.
-                if (hasExpected)
-                {
-                    summary.AppendLine($"Expected: {expected.Trim()}");
-                    var match = all.FirstOrDefault(kv =>
-                        kv.Value != null && HashTool.Matches(kv.Value, expected));
-                    matched = match.Key != null;
-                    string verdict = matched
-                        ? $"MATCH: expected hash equals the {match.Key} hash."
-                        : "MISMATCH: expected hash matches none of the computed hashes.";
-                    AppendLine(verdict);
-                    summary.AppendLine(verdict);
-                }
-            }
-            else
-            {
-                var hash = await HashTool.ComputeAsync(path, algo, progress, token);
-                if (hash == null)
-                {
-                    AppendLine($"{algo}: {FailMsg(algo)}");
-                    AddHistory("Hash compute", path, "", "compute failed",
-                        $"File: {path}{Environment.NewLine}{algo}: {FailMsg(algo)}");
-                    return;
-                }
-                string hline = $"{algo}: {hash}";
-                AppendLine(hline);
-                summary.AppendLine(hline);
-
-                if (hasExpected)
-                {
-                    summary.AppendLine($"Expected: {expected.Trim()}");
-                    matched = HashTool.Matches(hash, expected);
-                    string verdict = matched
-                        ? "MATCH: computed hash equals the expected value."
-                        : $"MISMATCH: expected {expected.Trim()}";
-                    AppendLine(verdict);
-                    summary.AppendLine(verdict);
-                }
-            }
-
-            // A pasted expected hash makes this a comparison; otherwise a plain compute.
-            if (hasExpected)
-                AddHistory("Hash comparison", path, "",
-                    matched ? "successful comparison" : "unsuccessful comparison", summary.ToString());
-            else
-                AddHistory("Hash compute", path, "", "hash computed", summary.ToString());
-        }
-        catch (OperationCanceledException)
-        {
-            AppendLine("Hash cancelled.");
-        }
-        finally
-        {
-            HashProgress.Visibility = Visibility.Collapsed;
-            CancelHashButton.IsEnabled = false;
-            ComputeHashButton.IsEnabled = true;
-            _hashCts?.Dispose();
-            _hashCts = null;
-        }
-    }
-
-    /// <summary>Cancellation source for the running hash, or null when idle.</summary>
-    private CancellationTokenSource? _hashCts;
-
-    /// <summary>
-    /// Cancels the in-progress hash computation. Safe when nothing is running.
-    /// Called from: the Hash tab Cancel button.
-    /// </summary>
-    private void CancelHash_Click(object sender, RoutedEventArgs e) => _hashCts?.Cancel();
 
     /// <summary>Clears the console box (and the separate window). Called from: XAML Click binding.</summary>
     private void ClearConsole_Click(object sender, RoutedEventArgs e) => ClearConsoleAll();
@@ -1591,25 +1581,6 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Computes the file's SHA256 locally and looks it up on VirusTotal.
-    /// Reloads settings.json first so a freshly added API key works without an
-    /// app restart. Only the hash leaves the machine, never the file.
-    /// Called from: XAML Click binding of the VirusTotal button.
-    /// </summary>
-    private async void VirusTotal_Click(object sender, RoutedEventArgs e)
-    {
-        var path = HashFileBox.Text.Replace("\"", "").Trim();
-        VirusTotalButton.IsEnabled = false;
-        try
-        {
-            await RunVirusTotalLookup(path, path);
-        }
-        finally
-        {
-            RefreshVirusTotalButtons();
-        }
-    }
-
     /// <summary>
     /// Shared VirusTotal routine: computes the SHA256 of fileToHash locally and
     /// looks it up, printing the verdict to the console. displayName is shown in
@@ -1700,47 +1671,6 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Prints the infected file report into the console.
-    /// Called from: XAML Click binding (Show infected report).
-    /// </summary>
-    private void ShowReport_Click(object sender, RoutedEventArgs e)
-    {
-        var report = LogManager.ReadReport();
-        AppendSection("INFECTED FILE REPORT");
-        AppendLine(report ?? "No report yet, no infections recorded.");
-    }
-
-    /// <summary>
-    /// Pulls FOUND lines from all log files into the report.
-    /// Called from: XAML Click binding (Extract from logs).
-    /// </summary>
-    private void ExtractLogs_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            int added = LogManager.ExtractFromLogs();
-            AppendLine(added > 0
-                ? $"{added} new FOUND entr{(added == 1 ? "y" : "ies")} added to the report."
-                : "No new FOUND entries in the log files.");
-        }
-        catch (Exception ex)
-        {
-            AppendLine($"Extract from logs failed: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// True when the process runs with administrator rights.
-    /// Called from: InitializeAsync (button state) and RestartAsAdmin_Click.
-    /// </summary>
-    private static bool IsElevated()
-    {
-        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
-        return new System.Security.Principal.WindowsPrincipal(identity)
-            .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
-    }
-
-    /// <summary>
     /// Restarts the GUI by relaunching the running EXE and closing this instance.
     /// Bundled ClamAV processes are stopped by the OnExit/Window_Closing cleanup.
     /// Called from: XAML Click binding (Restart button in Settings Maintenance).
@@ -1756,6 +1686,12 @@ public partial class MainWindow : Window
 
         try
         {
+            // Hand the daemon over instead of killing it: privileges do not change
+            // across a plain restart, so a running clamd stays usable and the fresh
+            // instance finds it up (StartDaemonOnStartupAsync then skips its start).
+            // This also removes the race where THIS process, exiting a moment later,
+            // would kill a daemon the new instance had already auto-started.
+            App.LeaveDaemonRunningOnExit = true;
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
                 FileName = exe,
@@ -1776,9 +1712,9 @@ public partial class MainWindow : Window
     /// hardcoded shortcut path: it relaunches the running EXE itself.
     /// Called from: XAML Click binding (Restart as admin).
     /// </summary>
-    private void RestartAsAdmin_Click(object sender, RoutedEventArgs e)
+    private async void RestartAsAdmin_Click(object sender, RoutedEventArgs e)
     {
-        if (IsElevated())
+        if (App.IsElevated())
         {
             AppendLine("Already running with administrator rights.");
             return;
@@ -1791,8 +1727,25 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Unlike a plain restart this one CHANGES privileges, and the point of the
+        // exercise is to get elevated capabilities. A daemon started by this
+        // non-elevated process would stay non-elevated and be reused by the new
+        // instance, so it is stopped here, BEFORE the relaunch. Doing it before
+        // (rather than in OnExit) also removes the race with the elevated copy's
+        // own auto-start.
+        bool daemonWasRunning = await DaemonController.IsRunningAsync();
+        if (daemonWasRunning)
+        {
+            AppendSection("DAEMON STOP");
+            AppendLine("Stopping clamd so the elevated instance can start it with administrator rights...");
+            await DaemonController.StopAsync(AppendLine);
+        }
+
         try
         {
+            // Already handled above; make sure the exit cleanup does not kill a
+            // daemon the elevated instance may have started in the meantime.
+            App.LeaveDaemonRunningOnExit = true;
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
                 FileName = exe,
@@ -1804,8 +1757,17 @@ public partial class MainWindow : Window
         }
         catch (System.ComponentModel.Win32Exception)
         {
-            // User declined the UAC prompt, keep the current instance (and its mutex).
+            // User declined the UAC prompt: keep running (and keep the mutex). The
+            // daemon was already stopped above, so restore it when it had been up
+            // and the settings expect it to run.
+            App.LeaveDaemonRunningOnExit = false;
             AppendLine("Elevation cancelled, still running without administrator rights.");
+            if (daemonWasRunning && !await DaemonController.IsRunningAsync())
+            {
+                AppendLine("Restarting the daemon that was stopped for the elevation attempt...");
+                await DaemonController.StartAsync(AppendLine);
+            }
+            await RefreshDaemonStatusAsync();
         }
     }
 
@@ -1843,10 +1805,13 @@ public partial class MainWindow : Window
         bool newHidden = index == 5 || index == 4;
         bool newHistory = index == 4;
         bool newSignatures = index == 3;
+        bool newQuarantine = index == 2;
         bool layoutChanged = newHidden != _consoleHiddenForTab
-            || newHistory != _onHistoryTab || newSignatures != _onSignaturesTab;
+            || newHistory != _onHistoryTab || newSignatures != _onSignaturesTab
+            || newQuarantine != _onQuarantineTab;
         _onHistoryTab = newHistory;
         _onSignaturesTab = newSignatures;
+        _onQuarantineTab = newQuarantine;
         _consoleHiddenForTab = newHidden;
         if (layoutChanged) ApplyConsoleLayout();
 
@@ -1876,6 +1841,7 @@ public partial class MainWindow : Window
     private const double OwnConsoleExtraCardHeight = 55;
     private bool _onHistoryTab;
     private bool _onSignaturesTab;
+    private bool _onQuarantineTab;
     private bool _consoleHiddenForTab;
     private ConsoleWindow? _consoleWindow;
 
@@ -2024,7 +1990,14 @@ public partial class MainWindow : Window
         bool showInMain = !_consoleHiddenForTab && _consoleMode != ConsolePosition.Window;
 
         if (showInMain && _consoleMode == ConsolePosition.Bottom)
+        {
             PositionDockedConsole(ConsoleBorder, ConsolePosition.Bottom);
+            // The Quarantine tab has a large table like History/Signatures, so give
+            // its card the same extra height and let the shared output console (a
+            // star row) take that much less - matching those tabs' output size.
+            if (_onQuarantineTab)
+                TabCardRow.Height = new GridLength(MainCardHeight + OwnConsoleExtraCardHeight);
+        }
         else if (showInMain && _consoleMode == ConsolePosition.Right)
             PositionDockedConsole(ConsoleBorder, ConsolePosition.Right);
         else
@@ -2269,7 +2242,7 @@ public partial class MainWindow : Window
     /// <summary>Opens the About dialog. Called from: title bar About button.</summary>
     private void About_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new AboutWindow(_versionInfo) { Owner = this };
+        var dialog = new AboutWindow(_versionInfo, _updatesAvailable) { Owner = this };
         // Run any follow-up after the dialog closes so its output shows in the console.
         if (dialog.ShowDialog() == true)
         {
@@ -2284,21 +2257,30 @@ public partial class MainWindow : Window
     private async void OpenUpdateCheck() => await ShowUpdateCheckAsync();
 
     /// <summary>
+    /// Shows or hides the subtle dot on the Detections button based on whether the
+    /// list holds any entries. Called from: InitializeAsync and DetectionManager.Changed.
+    /// </summary>
+    private void UpdateDetectionsIndicator()
+    {
+        if (DetectionsDot != null)
+            DetectionsDot.Visibility = DetectionManager.Entries.Count > 0
+                ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
     /// Opens the GitHub update dialog (latest ClamHub + ClamAV releases with their
     /// date). If ClamAV was downloaded and unpacked from it, refreshes the version
     /// info and daemon status. Called from: OpenUpdateCheck and OfferClamAvSetupAsync.
     /// </summary>
     private async Task ShowUpdateCheckAsync()
     {
-        var asm = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        string appVersion = asm != null
-            ? (asm.Revision > 0
-                ? $"{asm.Major}.{asm.Minor}.{asm.Build}.{asm.Revision}"
-                : $"{asm.Major}.{asm.Minor}.{asm.Build}")
-            : "1.0.3.6";
-
-        var dialog = new UpdateCheckWindow(appVersion, _versionInfo?.Engine, AppendLine) { Owner = this };
+        var dialog = new UpdateCheckWindow(GetAppVersionString(), _versionInfo?.Engine, AppendLine) { Owner = this };
         dialog.ShowDialog();
+
+        // Keep the About dot in sync with what the dialog last determined (a
+        // successful ClamAV install clears its update state before closing);
+        // null (GitHub unreachable) leaves the dot unchanged.
+        UpdateAvailableIndicators(dialog.UpdatesAvailable);
 
         if (dialog.ClamAvWasInstalled)
         {
@@ -2384,7 +2366,8 @@ public partial class MainWindow : Window
             return false;
         }
 
-        DaemonController.KillAllOwned(); // stop any daemon running from the old folder
+        // Stop any daemon still running from the OLD folder before switching.
+        DaemonController.KillAllOwned("ClamAV folder changed", AppendLine);
         AppPaths.SetClamAvDir(chosen);
         SettingsManager.Current.ClamAvPath = chosen;
         SettingsManager.Save();
@@ -2643,7 +2626,8 @@ public partial class MainWindow : Window
     private void AppendSection(string title)
     {
         if (ConsoleHasContent()) AppendLine("");
-        AppendLine($"================ {title} | {DateTime.Now:HH:mm:ss} ================");
+        foreach (var line in ClamHub.Core.ConsoleSections.Banner(title, $"{DateTime.Now:HH:mm:ss}"))
+            AppendLine(line);
     }
 
     /// <summary>
@@ -2671,6 +2655,14 @@ public partial class MainWindow : Window
     /// </summary>
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
+        // Defense in depth (2026-07-19): never run close-time cleanup from a
+        // non-primary process. Normally a secondary launch has no window at all
+        // (StartupUri removed, see App.OnStartup), but if one is ever constructed
+        // again its Closing MUST NOT kill the primary instance's clamd
+        // (KillAllOwned matches by folder) and MUST NOT overwrite settings.json
+        // with the geometry of a never-shown window.
+        if (!App.IsPrimaryInstance) return;
+
         _scanCts?.Cancel();
         // Detach the column-width watchers so their handlers are not left rooted.
         foreach (var (column, handler) in _columnWidthWatchers)
@@ -2683,10 +2675,13 @@ public partial class MainWindow : Window
                      .Where(w => !ReferenceEquals(w, this)).ToList())
             w.Close();
         SaveWindowSize();
-        // Leave clamd running when the app is restarting to finish an update, so the
+        // Leave clamd running when the app is restarting (update OR a plain restart
+        // that hands the daemon over, see App.LeaveDaemonRunningOnExit), so the
         // fresh instance finds it up; otherwise stop all bundled ClamAV processes.
-        if (!SelfUpdater.RestartingForUpdate)
-            DaemonController.KillAllOwned();
+        // The LeaveDaemonRunningOnExit check was missing here, which defeated the
+        // restart hand-over because Window_Closing runs BEFORE App.OnExit.
+        if (!SelfUpdater.RestartingForUpdate && !App.LeaveDaemonRunningOnExit)
+            DaemonController.KillAllOwned("main window closing", AppendLine);
     }
 
     /// <summary>

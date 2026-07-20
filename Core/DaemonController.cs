@@ -214,7 +214,7 @@ public static class DaemonController
         // a fresh one; otherwise StartAsync sees it running and skips the start, leaving
         // the OLD database loaded.
         if (await IsRunningAsync(500))
-            KillAllOwned();
+            KillAllOwned("restart helper: forcing a stuck daemon down", onStatus);
 
         return await StartAsync(onStatus, startTimeoutSeconds);
     }
@@ -273,8 +273,30 @@ public static class DaemonController
     /// installation is never affected.
     /// Called from: MainWindow.Window_Closing and App.OnExit.
     /// </summary>
-    public static void KillAllOwned()
+    public static void KillAllOwned(string reason = "unspecified", Action<string>? onStatus = null)
     {
+        // Hard safety net (2026-07-19): only the PRIMARY instance may ever stop
+        // the bundled ClamAV processes. This method matches clamd by FOLDER, so a
+        // secondary launch (context menu click while ClamHub already runs, or the
+        // pre-elevation copy) calling it would kill the primary instance's
+        // daemon; exactly that happened via the phantom StartupUri window (see
+        // App.OnStartup). All legitimate callers run in the primary. A suppressed
+        // call is still logged so daemon-stops.log shows the attempt instead of a
+        // silent mystery.
+        if (!ClamHub.App.IsPrimaryInstance)
+        {
+            LogDaemonStop($"SUPPRESSED (non-primary process): {reason}");
+            onStatus?.Invoke($"Skipped stopping ClamAV processes (not the primary instance; reason was: {reason}).");
+            return;
+        }
+
+        // Traceability: every shutdown of the daemon records WHO asked for it, so a
+        // daemon that disappears can be attributed instead of guessed at. The log
+        // file is written even when no console callback is available (e.g. from
+        // App.OnExit, where the window is already gone).
+        LogDaemonStop(reason);
+        onStatus?.Invoke($"Stopping bundled ClamAV processes (reason: {reason}).");
+
         // The instance we started ourselves (kill its whole tree first).
         try
         {
@@ -309,6 +331,29 @@ public static class DaemonController
                 catch { /* access denied, different bitness, or already exited: skip */ }
                 finally { p.Dispose(); }
             }
+        }
+    }
+
+    /// <summary>
+    /// Appends one line to Logs\daemon-stops.log recording who stopped the
+    /// daemon and when. Deliberately best effort and tiny: it exists so a
+    /// "the daemon died again" report can be traced to the exact caller instead
+    /// of being reproduced blindly. Called from: KillAllOwned.
+    /// </summary>
+    private static void LogDaemonStop(string reason)
+    {
+        try
+        {
+            string file = Path.Combine(AppPaths.LogsDir, "daemon-stops.log");
+            string line = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "{0:yyyy-MM-dd HH:mm:ss} pid={1} primary={2} reason={3}{4}",
+                DateTime.Now, Environment.ProcessId,
+                ClamHub.App.IsPrimaryInstance, reason, Environment.NewLine);
+            File.AppendAllText(file, line);
+        }
+        catch
+        {
+            // Logging must never affect shutdown.
         }
     }
 }

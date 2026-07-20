@@ -92,6 +92,9 @@ public static class AppPaths
     /// <summary>Folder for all log files (scan logs, daemon log, update log).</summary>
     public static string LogsDir => Path.Combine(BaseDir, "Logs");
 
+    /// <summary>Default folder for History exports (.\Logs\Exports).</summary>
+    public static string ExportsDir => Path.Combine(LogsDir, "Exports");
+
     /// <summary>Folder where infected files are moved when quarantine mode is used.</summary>
     public static string QuarantineDir => Path.Combine(BaseDir, "Quarantine");
 
@@ -138,6 +141,7 @@ public static class AppPaths
         Directory.CreateDirectory(DatabaseDir);
         Directory.CreateDirectory(DisabledDatabaseDir);
         Directory.CreateDirectory(LogsDir);
+        Directory.CreateDirectory(ExportsDir);
         Directory.CreateDirectory(QuarantineDir);
     }
 }

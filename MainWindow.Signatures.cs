@@ -182,6 +182,9 @@ public partial class MainWindow
             if (container && SigTool.IsAvailable)
                 rows.Add(DbRow.Official(await SigTool.GetInfoAsync(f), f, url));
             else
+                // sigtool --info only parses CVD/CLD containers ("Not a CVD file"
+                // on a loose .ldb), so loose databases are counted by line the way
+                // freshclam does; DbRow.Generic handles that.
                 rows.Add(DbRow.Generic(f, url));
         }
         return (files.Count, rows);
@@ -394,11 +397,14 @@ public partial class MainWindow
                 () => CustomDetail(kind, path, count));
         }
 
-        /// <summary>Row for any other database file in the folder. Called from: RefreshDatabaseInfoAsync.</summary>
+        /// <summary>Row for any other database file in the folder. Loose databases
+        /// are counted by line the way freshclam does (sigtool cannot parse them).
+        /// Called from: BuildDatabaseRowsAsync.</summary>
         public static DbRow Generic(string path, string url)
         {
             string sigs = CountSignatures(path);
-            return new DbRow(path, "-", sigs, FileTime(path), "n/a", false, url, () => GenericDetail(path, sigs, url));
+            return new DbRow(path, "-", sigs, FileTime(path), "n/a", false, url,
+                () => GenericDetail(path, sigs, url));
         }
 
         /// <summary>File mtime formatted, or "-" when the file is absent/unreadable.</summary>
@@ -490,7 +496,14 @@ public partial class MainWindow
                 disabled ? "Status: disabled (parked outside the database folder: not scanned, not updated)"
                          : "Type: additional database (loaded by clamd)"
             };
-            if (sigs != "-") lines.Add($"Signatures: {sigs}");
+            if (sigs != "-")
+            {
+                lines.Add($"Signatures: {sigs} (signature lines in the file)");
+                // freshclam's update log ("sigs: N") counts raw lines at download
+                // time and includes blank lines, so its number can differ from the
+                // signatures present in the file on disk right now.
+                lines.Add("Note: freshclam's \"sigs\" figure is counted at download time and may differ.");
+            }
             string modified = System.IO.File.Exists(path)
                 ? System.IO.File.GetLastWriteTime(path).ToString("yyyy-MM-dd HH:mm:ss")
                 : "-";
@@ -864,7 +877,7 @@ public partial class MainWindow
                     + $"It will be removed from the {other}."
                 : $"{conflicts} files are already on the {other}. Move them to the {target}? "
                     + $"They will be removed from the {other}.";
-            moveConflicts = new MessageDialog("Move between lists", msg, "Move", "Keep on " + other)
+            moveConflicts = new MessageDialog("Move between lists", msg, "Move", "Keep On " + other)
                 { Owner = dialogOwner }.ShowDialog() == true;
         }
 

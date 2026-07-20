@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:local="clr-namespace:ClamHub"
-        Title="ClamHub 1.0.3.6" Height="710" Width="1068"
+        Title="ClamHub 1.0.4" Height="710" Width="1068"
         MinHeight="710" MinWidth="1068"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None" ResizeMode="CanResize"
@@ -36,7 +36,7 @@
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center"
                             Margin="14,0,0,0">
                     <TextBlock Text="ClamHub" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <TextBlock Text="1.0.3.6" Margin="8,0,0,0"
+                    <TextBlock x:Name="TitleVersionText" Text="1.0.4" Margin="8,0,0,0"
                                Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center"/>
                 </StackPanel>
 
@@ -84,11 +84,26 @@
                 <!-- Detections + About -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <Button Content="Detections" Style="{StaticResource TitleBarTextButton}"
+                    <Button x:Name="DetectionsButton" Style="{StaticResource TitleBarTextButton}"
                             Click="Detections_Click"
-                            ToolTip="Infected files reported by scans, to work through"/>
-                    <Button Content="About" Style="{StaticResource TitleBarTextButton}"
-                            Click="About_Click"/>
+                            ToolTip="Infected files reported by scans, to work through">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Detections" VerticalAlignment="Center"/>
+                            <Ellipse x:Name="DetectionsDot" Width="7" Height="7" Margin="7,1,0,0"
+                                     VerticalAlignment="Center" Fill="{StaticResource WarnBrush}"
+                                     Visibility="Collapsed"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource TitleBarTextButton}"
+                            Click="About_Click"
+                            ToolTip="App info; the dot means a ClamHub or ClamAV update is available">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="About" VerticalAlignment="Center"/>
+                            <Ellipse x:Name="AboutDot" Width="7" Height="7" Margin="7,1,0,0"
+                                     VerticalAlignment="Center" Fill="{StaticResource WarnBrush}"
+                                     Visibility="Collapsed"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
 
                 <!-- Window control buttons -->
@@ -151,10 +166,13 @@
                 <TextBlock x:Name="DaemonStatusText" Text="Daemon status: checking..."
                            FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"
                            Margin="0,0,16,0"/>
-                <Button x:Name="StartDaemonButton" Content="Start daemon" Width="108" Height="30"
+                <Button x:Name="StartDaemonButton" Content="Start Daemon" Width="108" Height="30"
                         Margin="0,0,8,0" Click="StartDaemon_Click"/>
-                <Button x:Name="StopDaemonButton" Content="Stop daemon" Width="108" Height="30"
+                <Button x:Name="StopDaemonButton" Content="Stop Daemon" Width="108" Height="30"
                         Click="StopDaemon_Click"/>
+                <Button x:Name="DaemonUpdateButton" Content="Update Signatures" Width="140" Height="30"
+                        Margin="8,0,0,0" Click="Update_Click"
+                        ToolTip="Download the latest signature databases (freshclam)"/>
             </StackPanel>
         </Grid>
 
@@ -165,7 +183,7 @@
                 <RowDefinition x:Name="TabCardRow" Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- Tabs: Scan and Hash-Verifier -->
+            <!-- Tabs: Scan and File-Verifier -->
             <Border Grid.Row="0" Background="{StaticResource PanelBrush}" CornerRadius="8"
                     Padding="16,10,16,14" MinHeight="250">
             <Grid>
@@ -263,30 +281,27 @@
                                 <Path Data="M0,0 L10,10 M0,10 L10,0"
                                       Stroke="{StaticResource DangerBrush}" StrokeThickness="1.8"/>
                             </Button>
-                            <Button Grid.Column="3" Width="32" Height="30" Padding="0"
-                                    Margin="8,0,0,0" Click="AddToQueue_Click"
-                                    ToolTip="Add this path to the queue (or press Enter in the Target box)">
-                                <Grid Width="12" Height="12">
-                                    <Rectangle Height="1.6" HorizontalAlignment="Stretch"
-                                               VerticalAlignment="Center" Fill="{StaticResource TextBrush}"/>
-                                    <Rectangle Width="1.6" VerticalAlignment="Stretch"
-                                               HorizontalAlignment="Center" Fill="{StaticResource TextBrush}"/>
-                                </Grid>
-                            </Button>
-                            <Button Grid.Column="4" x:Name="ScanBrowseButton" Content="File..." Width="70" Height="30"
+                            <Button Grid.Column="3" x:Name="ScanBrowseButton" Content="File..." Width="70" Height="30"
                                     Margin="8,0,0,0" Click="ScanBrowse_Click"
                                     ToolTip="Choose one or more files, or a folder, to scan"/>
-                            <Button Grid.Column="5" x:Name="QueueButton" Content="Queue..." Width="90" Height="30"
+                            <Button Grid.Column="4" x:Name="QueueButton" Content="Queue..." Width="90" Height="30"
                                     Margin="8,0,0,0" Click="ScanQueue_Click"
                                     ToolTip="Open the scan queue to manage queued targets and saved queues"/>
+                            <Button Grid.Column="5" Style="{StaticResource GlyphButton}"
+                                    Width="32" Height="30" Margin="8,0,0,0"
+                                    Click="SendScanTargetsToVerifier_Click"
+                                    ToolTip="Send the Target path and all queued files to the File-Verifier (folders and drives are skipped)">
+                                <Path Data="M0,5 L10,5 M6,1 L10,5 L6,9"
+                                      Stroke="{StaticResource TextBrush}" StrokeThickness="1.8"/>
+                            </Button>
                             <Popup x:Name="ScanBrowsePopup" PlacementTarget="{Binding ElementName=ScanBrowseButton}"
                                    Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
                                 <Border Background="{StaticResource PanelBrush}" BorderBrush="#FF55585F"
                                         BorderThickness="1" CornerRadius="4" Padding="4" Margin="0,2,0,0">
                                     <StackPanel MinWidth="150">
-                                        <Button Content="Choose files..." Height="28" Margin="0,0,0,4"
+                                        <Button Content="Choose Files..." Height="28" Margin="0,0,0,4"
                                                 Click="ScanChooseFiles_Click"/>
-                                        <Button Content="Choose folder..." Height="28"
+                                        <Button Content="Choose Folder..." Height="28"
                                                 Click="ScanChooseFolder_Click"/>
                                     </StackPanel>
                                 </Border>
@@ -366,7 +381,7 @@
                         </StackPanel>
 
                         <!-- Scan buttons pinned to the bottom of the card so they
-                             line up with the Hash-Verifier compute button -->
+                             line up with the File-Verifier inspect button -->
                         <Grid Grid.Row="6">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
@@ -378,9 +393,10 @@
                             </Grid.ColumnDefinitions>
 
                             <StackPanel Grid.Column="0" Orientation="Horizontal">
-                                <Button x:Name="MemoryScanButton" Content="Memory scan"
+                                <Button x:Name="MemoryScanButton" Content="Memory Scan"
                                         Width="120" Height="30" Click="MemoryScan_Click"/>
-                                <CheckBox x:Name="KillProcessesCheck" Content="Stop infected processes"
+                                <CheckBox x:Name="KillProcessesCheck" Content="Stop Infected Processes"
+                                          Style="{StaticResource PillCheckBox}"
                                           Margin="10,0,0,0"
                                           ToolTip="Memory scan only: --kill --unload"/>
                             </StackPanel>
@@ -397,11 +413,11 @@
                                     ToolTipService.ShowOnDisabled="True"
                                     ToolTip="Look up the file's SHA256 on VirusTotal. Only the hash is sent, never the file."/>
                             <StackPanel Grid.Column="5" Orientation="Horizontal">
-                                <Button x:Name="ScanNoDaemonButton" Content="Scan w/o daemon"
+                                <Button x:Name="ScanNoDaemonButton" Content="Scan w/o Daemon"
                                         Width="130" Height="30" Margin="0,0,10,0"
                                         Click="ScanNoDaemon_Click"
                                         ToolTip="Scan with standalone clamscan (never the daemon). Required for per-scan exclusions to take effect."/>
-                                <Button x:Name="ScanButton" Content="Start scan"
+                                <Button x:Name="ScanButton" Content="Start Scan"
                                         Width="120" Height="30" FontWeight="SemiBold"
                                         Click="Scan_Click"/>
                             </StackPanel>
@@ -409,14 +425,14 @@
                     </Grid>
                 </TabItem>
 
-                <!-- Hash-Verifier tab -->
-                <TabItem Header="Hash-Verifier">
+                <!-- File-Verifier tab: hashes plus file system integrity checks -->
+                <TabItem Header="File-Verifier">
                     <Grid Margin="0,12,0,0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
@@ -425,6 +441,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
@@ -437,7 +454,7 @@
                                          PreviewDragOver="PathBox_PreviewDragOver"
                                          PreviewDrop="PathBox_PreviewDrop"/>
                                 <TextBlock Style="{StaticResource PlaceholderText}"
-                                           Text="Drop a file here, or enter a path, e.g. C:\Downloads\setup.exe">
+                                           Text="Drop one or more files here, or enter a path, e.g. C:\Downloads\setup.exe">
                                     <TextBlock.Visibility>
                                         <Binding ElementName="HashFileBox" Path="Text.IsEmpty">
                                             <Binding.Converter>
@@ -449,29 +466,35 @@
                             </Grid>
                             <Button Grid.Column="2" Style="{StaticResource GlyphButton}"
                                     Width="32" Height="30" Margin="6,0,0,0"
-                                    Click="ClearTextBox_Click" Tag="{Binding ElementName=HashFileBox}"
-                                    ToolTip="Clear the file">
+                                    Click="ClearVerifierField_Click"
+                                    ToolTip="Clear the file. If the field is already empty, clears the verifier queue.">
                                 <Path Data="M0,0 L10,10 M0,10 L10,0"
                                       Stroke="{StaticResource DangerBrush}" StrokeThickness="1.8"/>
                             </Button>
                             <Button Grid.Column="3" Content="File..." Width="70" Height="30"
                                     Margin="8,0,0,0" Click="BrowseHashFile_Click"/>
+                            <Button Grid.Column="4" x:Name="VerifierQueueButton" Content="Queue..." Width="90" Height="30"
+                                    Margin="8,0,0,0" Click="VerifierQueue_Click"
+                                    ToolTip="Open the verifier queue to manage queued files and run them all"/>
                         </Grid>
 
-                        <!-- Algorithm row (now below Expected) -->
-                        <StackPanel Grid.Row="2" Orientation="Horizontal">
-                            <TextBlock Text="Algorithm:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox x:Name="HashAlgoCombo" Width="110" Height="28" SelectedIndex="0">
-                                <ComboBoxItem Content="All"/>
-                                <ComboBoxItem Content="MD5"/>
-                                <ComboBoxItem Content="SHA1"/>
-                                <ComboBoxItem Content="SHA256"/>
-                                <ComboBoxItem Content="SHA384"/>
-                                <ComboBoxItem Content="SHA512"/>
-                                <ComboBoxItem Content="SHA3-256"/>
-                                <ComboBoxItem Content="SHA3-384"/>
-                                <ComboBoxItem Content="SHA3-512"/>
-                            </ComboBox>
+                        <!-- Expected Hash + Hashing Algorithm on one row (Row 1) -->
+
+                        <!-- Checks row: which File-Verifier stages Inspect runs. The
+                             selection is persisted in settings.json (InitializeFileVerifierTab
+                             restores it, Inspect_Click saves it). File metadata (size,
+                             timestamps, attributes) is always included. -->
+                        <!-- Running-stage indicator: a single slim bar plus status
+                             text that REPLACES the old hash progress bar. It runs
+                             determinate during hashing/PE (shows a percentage on
+                             large files) and pulsing for the file-system, signature,
+                             ClamAV and VirusTotal stages, with a label for each. -->
+                        <StackPanel Grid.Row="3" x:Name="VerifierIndicator" Visibility="Collapsed"
+                                    Margin="0,0,0,10">
+                            <ProgressBar x:Name="VerifierProgressBar" Minimum="0" Maximum="1"/>
+                            <TextBlock x:Name="VerifierIndicatorText" Text="Working..."
+                                       Foreground="{StaticResource AccentBrush}"
+                                       FontWeight="SemiBold" Margin="0,5,0,0"/>
                         </StackPanel>
 
                         <!-- Expected hash row (now above Algorithm) -->
@@ -480,14 +503,16 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="Expected (optional):"
+                            <TextBlock Grid.Column="0" Text="Expected Hash:"
                                        VerticalAlignment="Center" Margin="0,0,8,0"/>
                             <Grid Grid.Column="1">
                                 <TextBox x:Name="ExpectedHashBox" Height="28"
                                          VerticalContentAlignment="Center"/>
                                 <TextBlock Style="{StaticResource PlaceholderText}"
-                                           Text="paste a hash to compare, e.g. 9F86D08...">
+                                           Text="optional: paste a hash to compare, e.g. 9F86D08...">
                                     <TextBlock.Visibility>
                                         <Binding ElementName="ExpectedHashBox" Path="Text.IsEmpty">
                                             <Binding.Converter>
@@ -504,30 +529,75 @@
                                 <Path Data="M0,0 L10,10 M0,10 L10,0"
                                       Stroke="{StaticResource DangerBrush}" StrokeThickness="1.8"/>
                             </Button>
+                            <TextBlock Grid.Column="3" Text="Hashing Algorithm:" VerticalAlignment="Center"
+                                       Margin="16,0,8,0"/>
+                            <ComboBox Grid.Column="4" x:Name="HashAlgoCombo" Width="110" Height="28" SelectedIndex="0"
+                                      SelectionChanged="HashAlgo_SelectionChanged">
+                                <ComboBoxItem Content="All"/>
+                                <ComboBoxItem Content="MD5"/>
+                                <ComboBoxItem Content="SHA1"/>
+                                <ComboBoxItem Content="SHA256"/>
+                                <ComboBoxItem Content="SHA384"/>
+                                <ComboBoxItem Content="SHA512"/>
+                                <ComboBoxItem Content="SHA3-256"/>
+                                <ComboBoxItem Content="SHA3-384"/>
+                                <ComboBoxItem Content="SHA3-512"/>
+                            </ComboBox>
                         </Grid>
 
-                        <!-- Action row: progress bar (left) shown only while hashing,
-                             buttons pinned bottom-right -->
+
+                        <!-- Action row: the selectable checks sit on the left at
+                             the same height as the buttons, which stay pinned
+                             bottom-right. The running-stage indicator is the band
+                             directly above this row. -->
                         <Grid Grid.Row="4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <ProgressBar x:Name="HashProgress" Grid.Column="0" Height="8"
-                                         Minimum="0" Maximum="1" VerticalAlignment="Center"
-                                         Margin="0,0,12,0" Visibility="Collapsed"/>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Bottom" Margin="0,0,12,0">
+                                <!-- Upper line: the network/scan checks -->
+                                <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="Scans:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <CheckBox x:Name="IncludeClamAvCheck" Checked="VerifierOption_Changed" Unchecked="VerifierOption_Changed" Content="ClamAV"
+                                              Style="{StaticResource PillCheckBox}" Margin="0,0,8,0"
+                                              ToolTip="Report-only ClamAV scan (uses the daemon when it runs); findings go to the report and the Detections list, nothing is quarantined."/>
+                                    <CheckBox x:Name="IncludeVirusTotalCheck" Checked="VerifierOption_Changed" Unchecked="VerifierOption_Changed" Content="VirusTotal"
+                                              Style="{StaticResource PillCheckBox}" Margin="0,0,8,0"
+                                              ToolTip="Look up the file's SHA256 on VirusTotal (only the hash is sent, never the file); needs an API key (Settings)."/>
+                                </WrapPanel>
+                                <!-- Lower line (bottom edge): the local checks -->
+                                <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="Checks:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <CheckBox x:Name="IncludeHashesCheck" Checked="VerifierOption_Changed" Unchecked="VerifierOption_Changed" Content="Hashes" IsChecked="True"
+                                              Style="{StaticResource PillCheckBox}" Margin="0,0,8,0"
+                                              ToolTip="Compute the selected hash algorithm(s) and the file's entropy."/>
+                                    <CheckBox x:Name="IncludeFileSystemCheck" Checked="VerifierOption_Changed" Unchecked="VerifierOption_Changed" Content="File System" IsChecked="True"
+                                              Style="{StaticResource PillCheckBox}" Margin="0,0,8,0"
+                                              ToolTip="Read NTFS owner, access control entries, alternate data streams and the Mark of the Web (Zone.Identifier)."/>
+                                    <CheckBox x:Name="IncludePeCheck" Checked="VerifierOption_Changed" Unchecked="VerifierOption_Changed" Content="PE Analysis" IsChecked="True"
+                                              Style="{StaticResource PillCheckBox}" Margin="0,0,8,0"
+                                              ToolTip="For EXE/DLL/SYS files: headers, imports/imphash, exports, section entropy, security flags (ASLR/DEP/CFG), CLR, overlay and checksum."/>
+                                    <CheckBox x:Name="IncludeDocumentCheck" Checked="VerifierOption_Changed" Unchecked="VerifierOption_Changed" Content="Document Analysis" IsChecked="True"
+                                              Style="{StaticResource PillCheckBox}" Margin="0,0,8,0"
+                                              ToolTip="For Office/PDF/RTF files, shortcuts (LNK), scripts and archives: active-content facts (macros, DDE, remote templates, embedded objects, external URLs, encryption); structure only, not a malware verdict."/>
+                                    <CheckBox x:Name="IncludeSignatureCheck" Checked="VerifierOption_Changed" Unchecked="VerifierOption_Changed" Content="Digital Signature" IsChecked="True"
+                                              Style="{StaticResource PillCheckBox}" Margin="0,0,8,0"
+                                              ToolTip="Verify the Authenticode signature like Windows does: embedded AND catalog signatures; fully offline, revocation is not checked online."/>
+                                    <CheckBox x:Name="IncludeStringsCheck" Checked="VerifierOption_Changed" Unchecked="VerifierOption_Changed" Content="Strings/IOCs"
+                                              Style="{StaticResource PillCheckBox}"
+                                              ToolTip="Extract indicator strings (URLs, registry autostart keys, shell/PowerShell commands); extracted, not validated. Needs PE or Document Analysis enabled."/>
+                                </WrapPanel>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right"
+                                        VerticalAlignment="Bottom">
                                 <Button x:Name="CancelHashButton" Content="Cancel"
                                         Width="90" Height="30" Margin="0,0,10,0"
                                         IsEnabled="False" Click="CancelHash_Click"/>
-                                <Button x:Name="VirusTotalButton" Content="VirusTotal"
-                                        Width="100" Height="30" Margin="0,0,10,0"
-                                        Click="VirusTotal_Click"
-                                        ToolTipService.ShowOnDisabled="True"
-                                        ToolTip="Look up the file's SHA256 on VirusTotal. Only the hash is sent, never the file."/>
-                                <Button x:Name="ComputeHashButton" Content="Compute"
+                                <Button x:Name="InspectButton" Content="Inspect"
                                         Width="100" Height="30" FontWeight="SemiBold"
-                                        Click="ComputeHash_Click"/>
+                                        Click="Inspect_Click"
+                                        ToolTip="Run the selected checks on the file. Results go to the console and the History tab."/>
                             </StackPanel>
                         </Grid>
                     </Grid>
@@ -550,21 +620,21 @@
                                  separators between the groups. -->
                             <Button Content="Refresh" Height="30" Margin="16,0,0,0"
                                     Click="RefreshQuarantine_Click"/>
-                            <Button Content="Open folder" Height="30" Margin="6,0,0,0"
+                            <Button Content="Open Folder" Height="30" Margin="6,0,0,0"
                                     Click="OpenQuarantineFolder_Click"/>
                             <Button x:Name="QuarantineVtButton" Content="VirusTotal" Height="30"
                                     Margin="24,0,0,0" Click="QuarantineVirusTotal_Click"
                                     ToolTipService.ShowOnDisabled="True"/>
-                            <Button Content="Delete selected" Height="30" Margin="24,0,0,0"
+                            <Button Content="Delete Selected" Height="30" Margin="24,0,0,0"
                                     Click="DeleteQuarantine_Click"
                                     ToolTip="Permanently delete the quarantined file"/>
-                            <Button Content="Restore selected" Height="30" Margin="6,0,0,0"
+                            <Button Content="Restore Selected" Height="30" Margin="6,0,0,0"
                                     Click="RestoreQuarantine_Click"
                                     ToolTip="Move the file back to its original location"/>
-                            <Button Content="Restore + whitelist" Height="30" Margin="6,0,0,0"
+                            <Button Content="Restore + Whitelist" Height="30" Margin="6,0,0,0"
                                     Click="RestoreWhitelistQuarantine_Click"
                                     ToolTip="Restore the file and add it to the whitelist so future scans ignore it (use only for confirmed false positives)"/>
-                            <Button Content="Compare with databanks" Height="30" Margin="6,0,0,0"
+                            <Button Content="Compare With Databanks" Height="30" Margin="6,0,0,0"
                                     Click="CompareWithDatabanks_Click"
                                     ToolTip="Search this threat's signature name across the ClamAV databases to see which of them detect it, and under which names"/>
                         </StackPanel>
@@ -659,25 +729,25 @@
                             <StackPanel Grid.Column="0" Orientation="Horizontal">
                                 <TextBlock Text="Signature databases" FontWeight="SemiBold"
                                            VerticalAlignment="Center"/>
-                                <Button x:Name="RefreshDbInfoButton" Content="Refresh info" Height="30"
+                                <Button x:Name="RefreshDbInfoButton" Content="Refresh Info" Height="30"
                                         Margin="16,0,0,0" Click="RefreshDbInfo_Click"/>
-                                <Button x:Name="OpenDbFolderButton" Content="Open DB folder" Height="30"
+                                <Button x:Name="OpenDbFolderButton" Content="Open DB Folder" Height="30"
                                         Margin="6,0,0,0" Click="OpenDbFolder_Click"/>
-                                <Button x:Name="SignaturesUpdateButton" Content="Update signatures" Height="30"
+                                <Button x:Name="SignaturesUpdateButton" Content="Update Signatures" Height="30"
                                         Margin="6,0,0,0" Click="Update_Click"
                                         ToolTip="Download the latest signature databases (freshclam)"/>
-                                <Button x:Name="SearchSignaturesButton" Content="Search signatures" Height="30"
+                                <Button x:Name="SearchSignaturesButton" Content="Search Signatures" Height="30"
                                         Margin="6,0,0,0" Click="SearchSignatures_Click"
                                         ToolTip="Search or list the signatures inside the databases"/>
                             </StackPanel>
                             <StackPanel Grid.Column="2" Orientation="Horizontal">
-                                <Button x:Name="AddDatabaseButton" Content="Add database" Height="30"
+                                <Button x:Name="AddDatabaseButton" Content="Add Database" Height="30"
                                         Margin="0,0,6,0" Click="AddDatabaseFile_Click"
                                         ToolTip="Copy ClamAV database file(s) into the database folder"/>
-                                <Button x:Name="AddDatabaseUrlButton" Content="Add from URL" Height="30"
+                                <Button x:Name="AddDatabaseUrlButton" Content="Add From URL" Height="30"
                                         Margin="0,0,6,0" Click="AddDatabaseUrl_Click"
                                         ToolTip="Manage extra databases downloaded from custom URLs (freshclam)"/>
-                                <Button x:Name="ManageListsButton" Content="Manage lists..." Height="30"
+                                <Button x:Name="ManageListsButton" Content="Manage Lists..." Height="30"
                                         FontWeight="SemiBold" Click="ManageSignatureLists_Click"/>
                             </StackPanel>
                         </Grid>
@@ -784,20 +854,34 @@
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
-                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-                            <TextBlock Text="Past actions" FontWeight="SemiBold"
-                                       VerticalAlignment="Center"/>
-                            <Button Content="Refresh" Height="30" Margin="16,0,0,0"
-                                    Click="RefreshHistory_Click"/>
-                            <Button Content="Open history file" Height="30" Margin="6,0,0,0"
-                                    Click="OpenHistoryFile_Click"
-                                    ToolTip="Open Logs\history.json"/>
-                            <Button Content="Delete entry" Height="30" Margin="6,0,0,0"
-                                    Click="DeleteHistoryEntry_Click"
-                                    ToolTip="Remove the selected scan from the history"/>
-                            <Button Content="Clear history" Height="30" Margin="6,0,0,0"
-                                    Click="ClearHistory_Click"/>
-                        </StackPanel>
+                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                <TextBlock Text="Past actions" FontWeight="SemiBold"
+                                           VerticalAlignment="Center"/>
+                                <Button Content="Refresh" Height="30" Margin="16,0,0,0"
+                                        Click="RefreshHistory_Click"/>
+                                <Button Content="Open History File" Height="30" Margin="6,0,0,0"
+                                        Click="OpenHistoryFile_Click"
+                                        ToolTip="Open Logs\history.json"/>
+                                <Button Content="Delete Entry" Height="30" Margin="6,0,0,0"
+                                        Click="DeleteHistoryEntry_Click"
+                                        ToolTip="Remove the selected scan from the history"/>
+                                <Button Content="Clear History" Height="30" Margin="6,0,0,0"
+                                        Click="ClearHistory_Click"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button x:Name="ExportHistoryButton" Content="Export" Height="30" Margin="6,0,0,0"
+                                        Click="ExportHistoryEntry_Click"
+                                        ToolTip="Export the selected entry to a .txt file. Uses the default export folder from Settings."/>
+                                <Button x:Name="OpenExportsButton" Content="Open Exports" Height="30" Margin="6,0,0,0"
+                                        Click="OpenExportsFolder_Click"
+                                        ToolTip="Open the export folder in Windows Explorer."/>
+                            </StackPanel>
+                        </Grid>
 
                         <ListView Grid.Row="1" x:Name="HistoryList"
                                   Background="{StaticResource PanelBrush}" BorderThickness="0"
@@ -831,7 +915,8 @@
                                         </GridViewColumn.Header>
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
-                                                <TextBlock Text="{Binding Kind}" ToolTip="{Binding Kind}"
+                                                <TextBlock Text="{Binding Kind, Converter={StaticResource TitleCase}}"
+                                                           ToolTip="{Binding Kind, Converter={StaticResource TitleCase}}"
                                                            Margin="8,0,0,0" TextTrimming="CharacterEllipsis"/>
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
@@ -867,7 +952,8 @@
                                         </GridViewColumn.Header>
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
-                                                <TextBlock Text="{Binding ResultLabel}" ToolTip="{Binding ResultLabel}"
+                                                <TextBlock Text="{Binding ResultLabel, Converter={StaticResource TitleCase}}"
+                                                           ToolTip="{Binding ResultLabel, Converter={StaticResource TitleCase}}"
                                                            Margin="8,0,0,0" TextTrimming="CharacterEllipsis"/>
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
@@ -906,7 +992,7 @@
                             <TextBlock x:Name="ClamAvPathText" TextWrapping="Wrap"
                                        Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6"
                                        Text="(resolving...)"/>
-                            <Button x:Name="ChangeClamAvFolderButton" Content="Change ClamAV folder..."
+                            <Button x:Name="ChangeClamAvFolderButton" Content="Change ClamAV Folder..."
                                     Height="30" HorizontalAlignment="Left" Margin="0,0,0,2"
                                     Click="ChangeClamAvFolder_Click"
                                     ToolTip="Select an existing ClamAV folder on this PC; its location is used and saved"/>
@@ -926,6 +1012,8 @@
                                       ToolTip="Pass --multiscan so scans use multiple CPU threads."/>
                             <CheckBox x:Name="SetAlwaysAdmin" Content="Always start as admin" Margin="0,4"
                                       ToolTip="Relaunch elevated on startup (asks via UAC). If declined, starts normally."/>
+                            <CheckBox x:Name="SetCheckUpdates" Content="Search for updates on startup" Margin="0,4"
+                                      ToolTip="Check GitHub for ClamHub and ClamAV updates at startup; one console line, and a dot on the About button when an update exists."/>
                             <StackPanel Orientation="Horizontal" Margin="0,10,0,2">
                                 <TextBlock Text="Default action:" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                 <ComboBox x:Name="SetDefaultAction" Width="120" Height="26" SelectedIndex="0"
@@ -956,6 +1044,22 @@
                             <TextBlock TextWrapping="Wrap" Margin="0,5,0,0" FontSize="11"
                                        Foreground="{StaticResource MutedTextBrush}"
                                        Text="Stored unencrypted in settings.json next to the app (portable). Anyone with access to this folder can read it."/>
+
+                            <Separator Margin="0,12,0,8" Background="#FF3A3D46"/>
+                            <TextBlock Text="History export" FontWeight="SemiBold" Margin="0,4,0,2"/>
+                            <TextBlock Text="Default folder for the History tab's Export button (one entry to a .txt file)."
+                                       Foreground="{StaticResource MutedTextBrush}"
+                                       TextWrapping="Wrap" Margin="0,0,0,6"/>
+                            <TextBlock x:Name="HistoryExportPathText" TextWrapping="Wrap"
+                                       Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6"
+                                       Text="(resolving...)"/>
+                            <Button x:Name="ChangeHistoryExportFolderButton" Content="Change Export Folder..."
+                                    Height="30" HorizontalAlignment="Left" Margin="0,0,0,6"
+                                    Click="ChangeHistoryExportFolder_Click"
+                                    ToolTip="Pick the default folder for History exports."/>
+                            <CheckBox x:Name="SetHistoryAlwaysExport" Content="Always export to this path"
+                                      Margin="0,2"
+                                      ToolTip="When ticked, Export saves straight to the folder above without asking. When unticked, the save dialog opens there and you can choose another location."/>
 
                             <Separator Margin="0,12,0,8" Background="#FF3A3D46"/>
                             <TextBlock Text="Windows context menu" FontWeight="SemiBold" Margin="0,4,0,2"/>
@@ -998,25 +1102,25 @@
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
-                                <Button Grid.Row="0" Grid.Column="0" Content="Check for updates" Height="30"
-                                        Margin="0,0,4,8" Click="CheckUpdates_Click"
+                                <Button Grid.Row="0" Grid.Column="0" x:Name="CheckUpdatesButton" Content="Check For Updates"
+                                        Height="30" Margin="0,0,4,8" Click="CheckUpdates_Click"
                                         ToolTip="Check GitHub for the latest ClamHub and ClamAV releases, and download/set up ClamAV"/>
-                                <Button Grid.Row="0" Grid.Column="1" x:Name="UpdateButton" Content="Update signatures"
+                                <Button Grid.Row="0" Grid.Column="1" x:Name="UpdateButton" Content="Update Signatures"
                                         Height="30" Margin="4,0,0,8" Click="Update_Click"
                                         ToolTip="Run freshclam to update the signature databases"/>
 
-                                <Button Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Content="Rebuild all configs"
+                                <Button Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Content="Rebuild All Configs"
                                         Height="30" Margin="0,0,0,8" Click="RebuildAllConfigs_Click"
                                         ToolTip="Rewrite clamd.conf and freshclam.conf with correct database and log paths (asks whether to keep your settings)"/>
 
-                                <Button Grid.Row="2" Grid.Column="0" Content="Run diagnostics" Height="30"
+                                <Button Grid.Row="2" Grid.Column="0" Content="Run Diagnostics" Height="30"
                                         Margin="0,0,4,8" Click="RunDiagnostics_Click"
                                         ToolTip="Run clamconf to show engine, build, database and config diagnostics in the console"/>
                                 <Button Grid.Row="2" Grid.Column="1" x:Name="RestartButton" Content="Restart" Height="30"
                                         Margin="4,0,0,8" Click="Restart_Click" ToolTip="Relaunch ClamHub"/>
 
                                 <Button Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AdminRestartButton"
-                                        Content="Restart as admin" Height="30" Click="RestartAsAdmin_Click"
+                                        Content="Restart As Admin" Height="30" Click="RestartAsAdmin_Click"
                                         ToolTip="Needed for memory scans of system processes and protected folders"/>
                             </Grid>
                         </StackPanel>
@@ -1040,12 +1144,12 @@
                                         Click="SaveClamdConf_Click"/>
                                 <Button Content="Reload" Width="64" Height="30" Margin="0,0,6,6"
                                         Click="ReloadConfEditors_Click"/>
-                                <Button Content="Open file" Width="76" Height="30" Margin="0,0,6,6"
+                                <Button Content="Open File" Width="92" Height="30" Margin="0,0,6,6"
                                         Click="OpenConfFile_Click" Tag="clamd"/>
-                                <Button Content="Rebuild config" Width="118" Height="30" Margin="0,0,6,6"
+                                <Button Content="Rebuild Config" Width="118" Height="30" Margin="0,0,6,6"
                                         Click="RebuildConfig_Click" Tag="clamd"
                                         ToolTip="Rewrite this file with correct database and log paths (asks whether to keep your settings)"/>
-                                <Button Content="Reload daemon" Width="118" Height="30" Margin="0,0,6,6"
+                                <Button Content="Reload Daemon" Width="118" Height="30" Margin="0,0,6,6"
                                         Click="ReloadDaemon_Click"
                                         ToolTip="Restart the running daemon so signature/config changes take effect (safe when it is stopped)"/>
                             </WrapPanel>
@@ -1069,9 +1173,9 @@
                                         Click="SaveFreshConf_Click"/>
                                 <Button Content="Reload" Width="64" Height="30" Margin="0,0,6,6"
                                         Click="ReloadConfEditors_Click"/>
-                                <Button Content="Open file" Width="76" Height="30" Margin="0,0,6,6"
+                                <Button Content="Open File" Width="92" Height="30" Margin="0,0,6,6"
                                         Click="OpenConfFile_Click" Tag="freshclam"/>
-                                <Button Content="Rebuild config" Width="118" Height="30" Margin="0,0,6,6"
+                                <Button Content="Rebuild Config" Width="118" Height="30" Margin="0,0,6,6"
                                         Click="RebuildConfig_Click" Tag="freshclam"
                                         ToolTip="Rewrite this file with correct database and log paths (asks whether to keep your settings)"/>
                             </WrapPanel>
@@ -1110,10 +1214,10 @@
                     <TextBlock Grid.Column="0" Text="Output" FontWeight="SemiBold"
                                VerticalAlignment="Center"/>
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <Button Content="Open logs folder" Height="30" Margin="0,0,6,0"
+                        <Button Content="Open Logs Folder" Height="30" Margin="0,0,6,0"
                                 Click="OpenLogsFolder_Click"
                                 ToolTip="Show the Logs directory in Explorer"/>
-                        <Button Content="Clear output" Height="30"
+                        <Button Content="Clear Output" Height="30"
                                 Click="ClearConsole_Click"/>
                     </StackPanel>
                 </Grid>

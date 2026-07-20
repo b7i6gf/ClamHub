@@ -48,42 +48,45 @@
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" Text="Actions" FontWeight="SemiBold" Margin="0,0,0,8"/>
                     <StackPanel Grid.Row="1">
-                        <Button x:Name="RescanButton" Content="Rescan file" Height="30" Margin="0,0,0,6"
+                        <Button x:Name="RescanButton" Content="Rescan File" Height="30" Margin="0,0,0,6"
                                 Click="Rescan_Click"
                                 ToolTip="Scan the selected file(s) again and update the entries (Clean when no longer reported)"/>
                         <Button x:Name="QuarantineButton" Content="Quarantine" Height="30" Margin="0,0,0,6"
                                 Click="Quarantine_Click"
                                 ToolTip="Move the selected file(s) into ClamHub's quarantine (neutralized, restorable)"/>
-                        <Button x:Name="RemoveButton" Content="Remove file" Height="30" Margin="0,0,0,6"
+                        <Button x:Name="RemoveButton" Content="Remove File" Height="30" Margin="0,0,0,6"
                                 Click="Remove_Click"
                                 ToolTip="Delete the file from disk permanently"/>
-                        <Button x:Name="WhitelistButton" Content="Whitelist file" Height="30" Margin="0,0,0,6"
+                        <Button x:Name="WhitelistButton" Content="Whitelist File" Height="30" Margin="0,0,0,6"
                                 Click="Whitelist_Click"
                                 ToolTip="Add the file to the whitelist so future scans ignore it (confirmed false positives only)"/>
                         <Button x:Name="IgnoreButton" Content="Ignore" Height="30" Margin="0,0,0,6"
                                 Click="Ignore_Click"
                                 ToolTip="Mark the finding as ignored (the file stays untouched)"/>
                         <Separator Margin="0,4,0,10" Background="{StaticResource WindowBorderBrush}"/>
-                        <Button x:Name="VirusTotalButton" Content="VirusTotal check" Height="30" Margin="0,0,0,6"
+                        <Button x:Name="VerifyButton" Content="Verify File" Height="30" Margin="0,0,0,6"
+                                Click="Verify_Click"
+                                ToolTip="Run the full File-Verifier report on the first selected file (hashes, file system, PE analysis and Authenticode signature). Output appears in this window's Output panel."/>
+                        <Button x:Name="VirusTotalButton" Content="VirusTotal Check" Height="30" Margin="0,0,0,6"
                                 Click="VirusTotal_Click"
                                 ToolTip="Look up the file's SHA256 on VirusTotal (hash only, the file is not uploaded)"/>
-                        <Button x:Name="CompareButton" Content="Compare signature" Height="30" Margin="0,0,0,6"
+                        <Button x:Name="CompareButton" Content="Compare Signature" Height="30" Margin="0,0,0,6"
                                 Click="Compare_Click"
                                 ToolTip="Search all installed databases for this signature name (first selected entry)"/>
-                        <Button x:Name="FindDbButton" Content="Find database" Height="30" Margin="0,0,0,6"
+                        <Button x:Name="FindDbButton" Content="Find Database" Height="30" Margin="0,0,0,6"
                                 Click="FindDatabase_Click"
                                 ToolTip="Trace which database file(s) carry the signature(s) of the selected entries; container databases take a while"/>
                         <Separator Margin="0,4,0,10" Background="{StaticResource WindowBorderBrush}"/>
-                        <Button x:Name="DeleteEntryButton" Content="Delete entry" Height="30" Margin="0,0,0,6"
+                        <Button x:Name="DeleteEntryButton" Content="Delete Entry" Height="30" Margin="0,0,0,6"
                                 Click="DeleteEntry_Click"
                                 ToolTip="Remove the entry from this list (the file itself stays untouched)"/>
-                        <Button x:Name="DeleteManagedButton" Content="Delete managed entries" Height="30" Margin="0,0,0,6"
+                        <Button x:Name="DeleteManagedButton" Content="Delete Managed Entries" Height="30" Margin="0,0,0,6"
                                 Click="DeleteManaged_Click"
                                 ToolTip="Remove every entry that is no longer pending (quarantined, removed, whitelisted or ignored)"/>
-                        <Button x:Name="DeleteAllButton" Content="Delete all entries" Height="30" Margin="0,0,0,6"
+                        <Button x:Name="DeleteAllButton" Content="Delete All Entries" Height="30" Margin="0,0,0,6"
                                 Click="DeleteAll_Click"
                                 ToolTip="Remove every entry from the list (the files themselves stay untouched)"/>
-                        <Button x:Name="OpenFolderButton" Content="Open folder" Height="30" Margin="0,0,0,6"
+                        <Button x:Name="OpenFolderButton" Content="Open Folder" Height="30" Margin="0,0,0,6"
                                 Click="OpenFolder_Click"
                                 ToolTip="Open the file's folder in Explorer (careful with infected files)"/>
                     </StackPanel>
@@ -204,7 +207,7 @@
                         </ListView.View>
                     </ListView>
 
-                    <TextBlock Grid.Row="2" Text="Console" FontWeight="SemiBold" Margin="0,12,0,6"/>
+                    <TextBlock Grid.Row="2" Text="Output" FontWeight="SemiBold" Margin="0,12,0,6"/>
 
                     <Border Grid.Row="3" Background="#FF17181C" CornerRadius="6" Padding="2">
                         <RichTextBox x:Name="ConsoleBox" IsReadOnly="True" IsDocumentEnabled="True"

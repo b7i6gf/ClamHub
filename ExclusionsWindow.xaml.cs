@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Input;
 using Microsoft.Win32;
+using ClamHub.Core;
 
 namespace ClamHub;
 
@@ -34,6 +35,10 @@ public partial class ExclusionsWindow : Window
                             string windowTitle = "Scan exclusions")
     {
         InitializeComponent();
+
+        // Admin mode: restore drag and drop (UIPI blocks OLE drops); no-op otherwise.
+        Loaded += (_, _) => ElevatedDropSupport.Enable(this,
+            new ElevatedDropSupport.Target(ContentGrid, HandleDroppedPaths));
         Title = windowTitle;
         HeaderText.Text = windowTitle;
         SubtitleText.Text = subtitle;
@@ -108,8 +113,18 @@ public partial class ExclusionsWindow : Window
     private void Content_Drop(object sender, DragEventArgs e)
     {
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+        HandleDroppedPaths((string[])e.Data.GetData(DataFormats.FileDrop));
+    }
+
+    /// <summary>
+    /// Path-based core of the drop handling (folders to the directory list, files
+    /// to the file list), shared by the WPF Drop event and the elevated
+    /// WM_DROPFILES hook. Called from: Content_Drop and ElevatedDropSupport.
+    /// </summary>
+    private void HandleDroppedPaths(string[] paths)
+    {
         int dirs = 0, files = 0;
-        foreach (var p in (string[])e.Data.GetData(DataFormats.FileDrop))
+        foreach (var p in paths)
         {
             if (Directory.Exists(p)) { AddDirToList(p); dirs++; }
             else if (File.Exists(p)) { AddFileToList(p); files++; }

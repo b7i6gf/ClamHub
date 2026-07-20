@@ -21,10 +21,10 @@
 
             <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right"
                         VerticalAlignment="Bottom">
-                <Button Content="Keep settings" Width="120" Height="30" Margin="0,0,8,0"
+                <Button Content="Keep Settings" Width="120" Height="30" Margin="0,0,8,0"
                         Click="Keep_Click"
                         ToolTip="Carry over your current values; only the database and log paths are reset"/>
-                <Button Content="Reset to defaults" Width="130" Height="30" Margin="0,0,8,0"
+                <Button Content="Reset To Defaults" Width="130" Height="30" Margin="0,0,8,0"
                         Click="Defaults_Click"
                         ToolTip="Discard customizations and write first-run defaults"/>
                 <Button Content="Cancel" Width="80" Height="30" Click="Cancel_Click"/>
