@@ -80,7 +80,7 @@ Shows every file ClamHub has quarantined, with the original path, date and file 
 - "Detections" is now available (button currently on the upper right corner besides "About", might change in the future)
 - With this window you are now able to view all found files from previous scans to work through!
 - The 'Actions' provide a wide palette of functions to handle potential infected files. 
-- Once you managed a file the "Status" will show what was done. By selecting "Delete managed entries" you can clean up the list of all handled files and continue with the pending ones.
+- Once you managed a file the "Status" will show what was done. By selecting `Delete managed entries` you can clean up the list of all handled files and continue with the pending ones.
 
 ---
 
