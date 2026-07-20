@@ -45,14 +45,17 @@ Infected files can be reported only, moved to quarantine, or deleted - your choi
 
 ---
 
-### Hash Verifier
+### File-Verifier (Introduced in 1.0.4)
 <p align="center">
-<img src="Docs/Hash Verifier.png" alt="ClamHub" width="700"/>
+<img src="Docs/File-Verifier.png" alt="ClamHub" width="700"/>
 </p>
 
-- Drop or browse to any file and compute its hash. Supports SHA-1, SHA-256, SHA-384, SHA-512 and MD5 - individually or all at once.
+- Drag & Drop or select multiple files to inspect. Choose checks and scans you want to process before inspecting.
+- With this tool you get all the importand information of a single file: File System; PE Analysis; Document Analysis; Digital Signature; Strings/IOCs
 - Paste an expected hash to get an instant match / mismatch result
 - If you have a VirusTotal API key set up (in Settings), you can look up the file's SHA-256 directly from this tab. Only the hash is sent - the file never leaves your machine
+- Be efficient by using the context menu action `Create Integrity Report` to quickly inspect a file on your PC
+- All reports can be found in `History` and be exported to a .txt file
 
 ---
 
@@ -66,19 +69,32 @@ Shows every file ClamHub has quarantined, with the original path, date and file 
 - **Restore** a file back to exactly where it came from
 - **Delete** it permanently
 - **Check it on VirusTotal** using its stored hash
-  
+
 ---
+
+### Detections (Introduced in 1.0.3.6)
+<p align="center">
+<img src="Docs/Detections.png" alt="ClamHub" width="700"/>
+</p>
+
+- "Detections" is now available (button currently on the upper right corner besides "About", might change in the future)
+- With this window you are now able to view all found files from previous scans to work through!
+- The 'Actions' provide a wide palette of functions to handle potential infected files. 
+- Once you managed a file the "Status" will show what was done. By selecting "Delete managed entries" you can clean up the list of all handled files and continue with the pending ones.
+
+---
+
 ### Signatures (Introduced in 1.0.3)
 <p align="center">
 <img src="Docs/Signatures.png" alt="ClamHub" width="700"/>
 </p>
 
 - See all relevant information about the database you selected within the tab
-- Easily add custom URLs from third-party database providers by pressing the button "Add from URL"
-- Manage black- and whitelist entries; a new context menu entry got introduced to quickly add entries to the lists -> "Put on List"
+- Easily add custom URLs from third-party database providers by pressing the button `Add from URL`
+- Manage black- and whitelist entries; a new context menu entry got introduced to quickly add entries to the lists -> `Put on List`
 - Search for signatures within all or selected databases; you can also compare the signature of quarantined files with the databases
-- Select and disable databases to exclude those signatures for scans. Simply right-click on an entry and select "Disable database". When databases get disabled, they will be moved in a separate folder to ensure freshclam will not delete it. Therefore all disabled databases will not be updated as well!
-- Quickly remove databases by right-clicking an entry and select "Remove database"
+- Select and disable databases to exclude those signatures for scans. Simply right-click on an entry and select `Disable database`. When databases get disabled, they will be moved in a separate folder to ensure freshclam will not delete it. Therefore all disabled databases will not be updated as well!
+- Quickly remove databases by right-clicking an entry and select `Remove database`
 - Added the ability to search for specific signatures or duplicates in different databases as well as comparing found signatures from quarantined files with available databases.
 
 
@@ -94,6 +110,7 @@ Shows every file ClamHub has quarantined, with the original path, date and file 
 - Click any entry to see the full report of the scan or action.
 - You can clear the history or open the raw JSON file directly.
 - Deletion of entries or the whole history is supported as well.
+- Export selected entries to a .txt file by using the `Export` button
 
 ---
 
@@ -122,11 +139,12 @@ You can also:
 <img src="Docs/Update.png" alt="ClamHub" width="500"/>
 </p>
 
-- Keeping the app up-to-date is simple. You can update the app via the "Check for updates" button in the Settings tab or by navigating to the "About" window in the top right corner of the app.
+- Keeping the app up-to-date is simple. You can update the app via the `Check for updates` button in the Settings tab or by navigating to the `About` window in the top right corner of the app.
 <p align="center">
 <img src="Docs/About.png" alt="ClamHub" width="400"/>
 </p>
 - ClamHub will show you the newest updates there. Press the download button and wait.
+- You can enable an automatic check on startup. You'll notice an indicator on the `About` lable that will tell you an update is available
 
 ---
 ---
@@ -161,4 +179,4 @@ publish.cmd         # portable single-file release into .\publish
 
 ## Future
 
-- ClamHub is in active development. Expect multiple QoL and feature updates over the first few months! One feature that's currently missing is the sigtool.exe form ClamAV I really want to look into a bit more before I implement it into ClamHub.
+- ClamHub is in active development.
